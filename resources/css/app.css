@@ -1,0 +1,53 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+/* Light-only for now: dark: utilities only activate under an explicit .dark
+   class (never applied), instead of following the OS/browser color scheme. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-display: 'Outfit', 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+
+    /* Single accent: yellowgreen, desaturated for print/screen refinement */
+    --color-accent-50: #f5f9e8;
+    --color-accent-100: #e7f1cb;
+    --color-accent-200: #d2e49c;
+    --color-accent-300: #b7d569;
+    --color-accent-400: #a0c443;
+    --color-accent-500: #85ac2c;
+    --color-accent-600: #6a8a22;
+    --color-accent-700: #536c1d;
+    --color-accent-800: #44571c;
+    --color-accent-900: #3a491b;
+    --color-accent-950: #1e2a0b;
+
+    /* Neutral base: off-black / off-white, never pure #000 or #fff */
+    --color-ink-50: #f7f7f6;
+    --color-ink-100: #ececea;
+    --color-ink-200: #d7d6d2;
+    --color-ink-300: #b3b1ab;
+    --color-ink-400: #8a877f;
+    --color-ink-500: #67655e;
+    --color-ink-600: #4c4a45;
+    --color-ink-700: #38362f;
+    --color-ink-800: #252420;
+    --color-ink-900: #1a1917;
+    --color-ink-950: #100f0d;
+}
+
+/* z-index scale: nav 40, sticky bits 30, overlays/modals 50, grain/scrim 60 */
+
+@layer base {
+    ::selection {
+        background-color: var(--color-accent-300);
+        color: var(--color-ink-950);
+    }
+
+    [x-cloak] {
+        display: none !important;
+    }
+}
