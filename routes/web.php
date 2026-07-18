@@ -5,6 +5,8 @@ use App\Http\Controllers\Admin\CheckinController as AdminCheckinController;
 use App\Http\Controllers\Admin\CourtController as AdminCourtController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\HeroImageController;
+use App\Http\Controllers\Admin\MatchController;
+use App\Http\Controllers\Admin\MatchGameController;
 use App\Http\Controllers\Admin\PaymentMethodController;
 use App\Models\HeroImage;
 use App\Http\Controllers\Admin\SettingsController;
@@ -65,6 +67,19 @@ Route::middleware(['auth', 'role:admin,staff'])->prefix('admin')->name('admin.')
     Route::post('/bookings/{booking}/approve', [AdminBookingController::class, 'approve'])->name('bookings.approve');
     Route::post('/bookings/{booking}/reject', [AdminBookingController::class, 'reject'])->name('bookings.reject');
     Route::post('/bookings/{booking}/cancel', [AdminBookingController::class, 'cancel'])->name('bookings.cancel');
+
+    // Live match scoring on a checked-in booking: admin and staff both run these.
+    Route::get('/bookings/{booking}/matches/create', [MatchController::class, 'create'])->name('matches.create');
+    Route::post('/bookings/{booking}/matches', [MatchController::class, 'store'])->name('matches.store');
+    Route::get('/matches/{match}', [MatchController::class, 'show'])->name('matches.show');
+    Route::post('/matches/{match}/start', [MatchController::class, 'start'])->name('matches.start');
+    Route::post('/matches/{match}/complete', [MatchController::class, 'complete'])->name('matches.complete');
+    Route::get('/matches/{match}/results', [MatchController::class, 'results'])->name('matches.results');
+    Route::post('/matches/{match}/games/{game}/point', [MatchGameController::class, 'point'])->name('matches.games.point');
+    Route::post('/matches/{match}/games/{game}/side-out', [MatchGameController::class, 'sideOut'])->name('matches.games.side-out');
+    Route::post('/matches/{match}/games/{game}/timeout', [MatchGameController::class, 'timeout'])->name('matches.games.timeout');
+    Route::post('/matches/{match}/games/{game}/complete', [MatchGameController::class, 'complete'])->name('matches.games.complete');
+    Route::post('/matches/{match}/games/{game}/rewind', [MatchGameController::class, 'rewind'])->name('matches.games.rewind');
 
     // Admin-only: court/settings/catalog management
     Route::middleware('role:admin')->group(function () {

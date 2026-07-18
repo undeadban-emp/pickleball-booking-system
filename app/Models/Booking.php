@@ -81,6 +81,16 @@ class Booking extends Model
         return $this->hasMany(BookingStatusLog::class);
     }
 
+    public function matches(): HasMany
+    {
+        return $this->hasMany(GameMatch::class);
+    }
+
+    public function hasMatch(): bool
+    {
+        return $this->matches()->exists();
+    }
+
     public function contactName(): string
     {
         return $this->user->name ?? $this->guest_name ?? 'Guest';

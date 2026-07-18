@@ -17,7 +17,7 @@ class BookingController extends Controller
     public function index(Request $request)
     {
         $bookings = Booking::query()
-            ->with(['court', 'user:id,name,phone,email', 'slots', 'statusLogs.changedBy:id,name'])
+            ->with(['court', 'user:id,name,phone,email', 'slots', 'statusLogs.changedBy:id,name', 'matches'])
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('court_id'), fn ($q) => $q->where('court_id', $request->integer('court_id')))
             ->when($request->filled('search'), function ($q) use ($request) {

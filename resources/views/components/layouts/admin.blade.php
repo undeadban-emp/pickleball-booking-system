@@ -5,6 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#100f0d">
         <meta name="robots" content="noindex, nofollow">
+        <meta name="csrf-token" content="{{ csrf_token() }}">
 
         <title>{{ isset($title) ? $title.' — Admin' : 'Admin' }} · Kitchen Line</title>
 

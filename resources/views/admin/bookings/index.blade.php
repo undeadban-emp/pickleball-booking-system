@@ -319,6 +319,35 @@
                                 </form>
                             @endif
                         </div>
+
+                        @if ($booking->status === 'completed' && $booking->checked_in_at !== null)
+                            <div class="border-t border-ink-100 pt-4 lg:col-span-2 dark:border-ink-800">
+                                <p class="text-xs font-semibold tracking-wide text-ink-400 uppercase">Match</p>
+
+                                @if ($booking->matches->isNotEmpty())
+                                    <ul class="mt-2 space-y-1.5">
+                                        @foreach ($booking->matches->sortByDesc('id') as $match)
+                                            <li>
+                                                <a href="{{ route('admin.matches.show', $match) }}" class="inline-flex items-center gap-1.5 text-sm font-medium text-accent-700 hover:text-accent-800 dark:text-accent-400">
+                                                    <i class="ph {{ in_array($match->status, ['verifying', 'completed']) ? 'ph-trophy' : 'ph-play-circle' }}"></i>
+                                                    {{ in_array($match->status, ['verifying', 'completed']) ? 'View results' : 'Score match' }}
+                                                    <span class="text-xs font-normal text-ink-400">({{ str($match->status)->headline() }})</span>
+                                                </a>
+                                            </li>
+                                        @endforeach
+                                    </ul>
+                                    <a href="{{ route('admin.matches.create', $booking) }}" class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-white">
+                                        <i class="ph ph-plus"></i>
+                                        Add another match
+                                    </a>
+                                @else
+                                    <a href="{{ route('admin.matches.create', $booking) }}" class="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-ink-950 px-4 py-2 text-sm font-semibold text-white hover:bg-ink-800 dark:bg-accent-500 dark:text-ink-950 dark:hover:bg-accent-400">
+                                        <i class="ph ph-plus"></i>
+                                        Add match
+                                    </a>
+                                @endif
+                            </div>
+                        @endif
                     @endif
 
                     <a href="{{ route('booking.public', $booking->receipt_token) }}" target="_blank" class="inline-flex items-center gap-1.5 text-sm font-medium text-accent-700 hover:text-accent-800 lg:col-span-2 dark:text-accent-400">
