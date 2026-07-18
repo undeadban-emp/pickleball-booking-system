@@ -10,6 +10,7 @@
         "laravel/framework": "^13.8",
         "laravel/sanctum": "^4.3",
         "laravel/tinker": "^3.0",
+        "pragmarx/google2fa": "^9.0",
         "simplesoftwareio/simple-qrcode": "^4.2"
     },
     "require-dev": {

@@ -1,6 +1,12 @@
 <?php
 
 use App\Http\Controllers\Api\Admin\BookingController as AdminBookingController;
+use App\Http\Controllers\Api\Admin\CourtController as AdminCourtController;
+use App\Http\Controllers\Api\Admin\HeroImageController as AdminHeroImageController;
+use App\Http\Controllers\Api\Admin\PaymentMethodController as AdminPaymentMethodController;
+use App\Http\Controllers\Api\Admin\SettingsController as AdminSettingsController;
+use App\Http\Controllers\Api\AppUpdateController;
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AvailabilityController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\CheckinController;
@@ -8,38 +14,84 @@ use App\Http\Controllers\Api\CourtController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
-
-// Public: browsing courts and availability
+// Public: browsing courts and availability. Also consumed directly by the
+// server-rendered website's browser JS (booking-calendar.js, availability-grid.js
+// via fetch()), which can't carry the Flutter app's embedded X-Jocos-Token —
+// so these stay outside the app.token gate below, same as before it existed.
 Route::get('/courts', [CourtController::class, 'index']);
 Route::get('/courts/{court}/slots', [CourtController::class, 'slots']);
 Route::get('/availability', [AvailabilityController::class, 'index']);
 
-// Customer booking
-Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
-    Route::get('/bookings/mine', [BookingController::class, 'mine']);
-    Route::post('/bookings', [BookingController::class, 'store']);
-    Route::get('/bookings/{booking}', [BookingController::class, 'show']);
-    Route::post('/bookings/{booking}/gcash-reference', [BookingController::class, 'submitGcashReference']);
-    Route::get('/bookings/{booking}/checkin-qr', [BookingController::class, 'checkinQr']);
-});
+// Everything else requires the official Kitchen Line app header. It only
+// proves "this is our app build", not "this is a trusted user" — real
+// authorization still comes from auth:sanctum + role below. None of this is
+// touched by the website's own JS, only the Flutter app.
+Route::middleware('app.token')->group(function () {
 
-// Admin booking management
-Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('admin')->group(function () {
-    Route::get('/bookings', [AdminBookingController::class, 'index']);
-    Route::get('/bookings/latest', [AdminBookingController::class, 'latest']);
-});
+    Route::post('/auth/login', [AuthController::class, 'login']);
+    Route::post('/auth/register', [AuthController::class, 'register']);
+    Route::get('/app/latest-version', [AppUpdateController::class, 'latest']);
 
-Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
-    Route::post('/bookings/{booking}/approve', [AdminBookingController::class, 'approve']);
-    Route::post('/bookings/{booking}/reject', [AdminBookingController::class, 'reject']);
-    Route::post('/bookings/{booking}/cancel', [AdminBookingController::class, 'cancel']);
-});
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::get('/auth/me', [AuthController::class, 'me']);
+        Route::post('/auth/logout', [AuthController::class, 'logout']);
+        Route::post('/auth/device-token', [AuthController::class, 'deviceToken']);
 
-// Front-desk check-in (admin or staff)
-Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('checkin')->group(function () {
-    Route::post('/validate', [CheckinController::class, 'validateToken']);
-    Route::post('/{booking}/confirm', [CheckinController::class, 'confirm']);
+        Route::get('/user', fn (Request $request) => $request->user());
+    });
+
+    // Customer: book + list their own bookings
+    Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
+        Route::get('/bookings/mine', [BookingController::class, 'mine']);
+        Route::post('/bookings', [BookingController::class, 'store']);
+        Route::get('/bookings/{booking}', [BookingController::class, 'show']);
+        Route::post('/bookings/{booking}/gcash-reference', [BookingController::class, 'submitGcashReference']);
+        Route::get('/bookings/{booking}/checkin-qr', [BookingController::class, 'checkinQr']);
+    });
+
+    // Staff + admin: booking oversight and front-desk check-in
+    Route::middleware(['auth:sanctum', 'role:admin,staff'])->group(function () {
+        Route::prefix('admin')->group(function () {
+            Route::get('/bookings', [AdminBookingController::class, 'index']);
+            Route::get('/bookings/latest', [AdminBookingController::class, 'latest']);
+        });
+
+        Route::prefix('checkin')->group(function () {
+            Route::post('/validate', [CheckinController::class, 'validateToken']);
+            Route::post('/{booking}/confirm', [CheckinController::class, 'confirm']);
+        });
+
+        // Booking decisions: admin and staff both manage the booking queue.
+        Route::prefix('admin')->group(function () {
+            Route::post('/bookings/{booking}/approve', [AdminBookingController::class, 'approve']);
+            Route::post('/bookings/{booking}/reject', [AdminBookingController::class, 'reject']);
+            Route::post('/bookings/{booking}/cancel', [AdminBookingController::class, 'cancel']);
+        });
+    });
+
+    // Admin-only: court/settings/catalog management
+    Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
+        Route::get('/courts', [AdminCourtController::class, 'index']);
+        Route::post('/courts', [AdminCourtController::class, 'store']);
+        Route::put('/courts/{court}', [AdminCourtController::class, 'update']);
+        Route::post('/courts/{court}/maintenance', [AdminCourtController::class, 'toggleMaintenance']);
+        Route::post('/courts/{court}/toggle-active', [AdminCourtController::class, 'toggleActive']);
+
+        Route::get('/settings', [AdminSettingsController::class, 'show']);
+        Route::post('/settings', [AdminSettingsController::class, 'update']);
+        Route::post('/settings/logo/remove', [AdminSettingsController::class, 'removeLogo']);
+
+        Route::get('/payment-methods', [AdminPaymentMethodController::class, 'index']);
+        Route::post('/payment-methods', [AdminPaymentMethodController::class, 'store']);
+        // POST (not PUT) on update so multipart QR-image uploads work from mobile clients.
+        Route::post('/payment-methods/{paymentMethod}', [AdminPaymentMethodController::class, 'update']);
+        Route::post('/payment-methods/{paymentMethod}/toggle-active', [AdminPaymentMethodController::class, 'toggleActive']);
+        Route::delete('/payment-methods/{paymentMethod}', [AdminPaymentMethodController::class, 'destroy']);
+
+        Route::get('/hero-images', [AdminHeroImageController::class, 'index']);
+        Route::post('/hero-images', [AdminHeroImageController::class, 'store']);
+        Route::post('/hero-images/{heroImage}/move-up', [AdminHeroImageController::class, 'moveUp']);
+        Route::post('/hero-images/{heroImage}/move-down', [AdminHeroImageController::class, 'moveDown']);
+        Route::delete('/hero-images/{heroImage}', [AdminHeroImageController::class, 'destroy']);
+    });
 });

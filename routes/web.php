@@ -61,12 +61,13 @@ Route::middleware(['auth', 'role:admin,staff'])->prefix('admin')->name('admin.')
     Route::get('/checkin', [AdminCheckinController::class, 'index'])->name('checkin.index');
     Route::post('/checkin/{booking}/confirm', [AdminCheckinController::class, 'confirm'])->name('checkin.confirm');
 
-    // Admin-only: payment decisions, court/settings management
-    Route::middleware('role:admin')->group(function () {
-        Route::post('/bookings/{booking}/approve', [AdminBookingController::class, 'approve'])->name('bookings.approve');
-        Route::post('/bookings/{booking}/reject', [AdminBookingController::class, 'reject'])->name('bookings.reject');
-        Route::post('/bookings/{booking}/cancel', [AdminBookingController::class, 'cancel'])->name('bookings.cancel');
+    // Booking decisions: admin and staff both manage the booking queue.
+    Route::post('/bookings/{booking}/approve', [AdminBookingController::class, 'approve'])->name('bookings.approve');
+    Route::post('/bookings/{booking}/reject', [AdminBookingController::class, 'reject'])->name('bookings.reject');
+    Route::post('/bookings/{booking}/cancel', [AdminBookingController::class, 'cancel'])->name('bookings.cancel');
 
+    // Admin-only: court/settings/catalog management
+    Route::middleware('role:admin')->group(function () {
         Route::get('/courts', [AdminCourtController::class, 'index'])->name('courts.index');
         Route::post('/courts', [AdminCourtController::class, 'store'])->name('courts.store');
         Route::put('/courts/{court}', [AdminCourtController::class, 'update'])->name('courts.update');

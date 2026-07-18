@@ -142,7 +142,7 @@
                                 <button type="button" @click="activeId = {{ $booking->id }}" class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-ink-400 hover:text-ink-800 dark:border-ink-700 dark:text-ink-400" title="View details">
                                     <i class="ph ph-eye text-base"></i>
                                 </button>
-                                @if ($booking->status === 'pending_payment' && auth()->user()->isAdmin())
+                                @if ($booking->status === 'pending_payment' && (auth()->user()->isAdmin() || auth()->user()->isStaff()))
                                     <form method="POST" action="{{ route('admin.bookings.approve', $booking) }}">
                                         @csrf
                                         <button type="submit" class="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600">Approve</button>
@@ -151,7 +151,7 @@
                                         @csrf
                                         <button type="submit" class="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-600">Reject</button>
                                     </form>
-                                @elseif ($booking->status === 'confirmed' && auth()->user()->isAdmin())
+                                @elseif ($booking->status === 'confirmed' && (auth()->user()->isAdmin() || auth()->user()->isStaff()))
                                     <form method="POST" action="{{ route('admin.bookings.cancel', $booking) }}" onsubmit="return confirm('Cancel this booking?');">
                                         @csrf
                                         <button type="submit" class="rounded-lg border border-ink-200 px-3 py-1.5 text-xs font-semibold text-ink-700 hover:border-rose-400 hover:text-rose-600 dark:border-ink-700 dark:text-ink-300">Cancel</button>
@@ -301,7 +301,7 @@
                         </div>
                     @endif
 
-                    @if (auth()->user()->isAdmin())
+                    @if (auth()->user()->isAdmin() || auth()->user()->isStaff())
                         <div class="flex flex-wrap gap-2 border-t border-ink-100 pt-4 lg:col-span-2 dark:border-ink-800">
                             @if ($booking->status === 'pending_payment')
                                 <form method="POST" action="{{ route('admin.bookings.approve', $booking) }}">

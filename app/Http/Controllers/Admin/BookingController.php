@@ -72,7 +72,7 @@ class BookingController extends Controller
 
     public function approve(Booking $booking)
     {
-        $this->authorizeAdmin();
+        $this->authorizeCanManageBookings();
 
         try {
             $this->bookings->approve($booking, Auth::user());
@@ -85,7 +85,7 @@ class BookingController extends Controller
 
     public function reject(Request $request, Booking $booking)
     {
-        $this->authorizeAdmin();
+        $this->authorizeCanManageBookings();
 
         $data = $request->validate(['reason' => ['nullable', 'string', 'max:255']]);
 
@@ -100,7 +100,7 @@ class BookingController extends Controller
 
     public function cancel(Request $request, Booking $booking)
     {
-        $this->authorizeAdmin();
+        $this->authorizeCanManageBookings();
 
         $data = $request->validate(['reason' => ['nullable', 'string', 'max:255']]);
 
@@ -113,8 +113,8 @@ class BookingController extends Controller
         return back()->with('status', "Booking {$booking->booking_code} cancelled.");
     }
 
-    protected function authorizeAdmin(): void
+    protected function authorizeCanManageBookings(): void
     {
-        abort_unless(Auth::user()->isAdmin(), 403);
+        abort_unless(Auth::user()->isAdmin() || Auth::user()->isStaff(), 403);
     }
 }

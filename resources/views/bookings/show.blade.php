@@ -394,7 +394,8 @@
                     <div class="mt-4 rounded-2xl border border-ink-100 bg-white p-6 text-center dark:border-ink-800 dark:bg-ink-900">
                         <p class="text-sm font-semibold text-ink-950 dark:text-white">Show this code at the gate</p>
                         <div class="mx-auto mt-4 w-fit rounded-2xl bg-white p-3">
-                            {!! QrCode::format('svg')->size(220)->generate(url('/checkin/'.$booking->checkin_token)) !!}
+                            {{-- {!! QrCode::format('svg')->size(220)->generate(url('/checkin/'.$booking->checkin_token)) !!} --}}
+                            {!! QrCode::format('svg')->size(220)->generate($booking->checkin_token) !!}
                         </div>
                         <p class="mt-4 text-xs text-ink-500 dark:text-ink-400">
                             Valid until {{ $booking->checkin_token_expires_at?->format('g:i A, M j') }}
