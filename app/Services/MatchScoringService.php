@@ -15,24 +15,34 @@ use Illuminate\Support\Facades\DB;
  * is a thin AJAX + rendering layer only — every rule lives here so there's a
  * single source of truth instead of duplicated client/server logic that can drift.
  *
- * Doubles court-position rotation (service-point scoring only — see
+ * Doubles court-position rotation for SERVICE-POINT scoring only (see
  * usesPositionRotation()): a team's two players occupy the right/left court.
  * Only Point rotates anyone — every point the serving team wins UNCONDITIONALLY
  * toggles the server to the opposite side, and their partner takes the other
  * side. This is a pure toggle, not a recompute-from-score-parity: after a
- * "Server 1 loses -> Server 2 takes over" handoff (which deliberately never
- * repositions anyone), the server can already be standing on the side score
- * parity would dictate — recomputing from parity there would silently no-op
- * (a real point with zero visible swap). Toggling always swaps, full stop.
- * Side Out never repositions anyone: serve just passes to whichever player
- * already happens to be standing in the correct court for the new server.
- * See seedTeamArrangement() (game start) and rotateServerPosition() (every
- * Point) for where positions actually change.
+ * "Server 1 loses -> Server 2 takes over" handoff, the server can already be
+ * standing on the side score parity would dictate — recomputing from parity
+ * there would silently no-op (a real point with zero visible swap). Toggling
+ * always swaps, full stop. Side Out never repositions anyone: serve just
+ * passes to whichever player already happens to be standing in the correct
+ * court for the new server. See seedTeamArrangement() (game start) and
+ * rotateServerPosition() (every Point) for where positions actually change.
+ *
+ * Rally-point doubles has its own, simpler court-side rule — side is
+ * determined by the CURRENT SERVER'S OWN team score, recomputed fresh every
+ * time (not toggled, not carried over): even score serves left, odd serves
+ * right. Applied in both recordPoint() (server continues, side follows their
+ * new score) and applySideOut() (receiver wins and gains serve, side follows
+ * THEIR new score). No game-start seeding, no per-player tracking — those
+ * are service-point-only mechanics and were never part of the rally spec.
  *
  * server_number is a per-turn "Server 1 / Server 2 this turn" label, NOT a
  * stable player reference — it always resets to 1 the instant a side-out
  * hands serve to a team, regardless of which permanent slot that player
  * has. Identity is always derived on demand from (team, server_position).
+ * Rally-point never has a "Server 2" (every rally that's lost is a full
+ * side-out, never a same-team handoff), so server_number stays 1 there and
+ * isn't shown on the scoreboard at all — see match-scoreboard.js scoreLabel.
  */
 class MatchScoringService
 {
@@ -100,16 +110,32 @@ class MatchScoringService
         // team's "second" server (the classic "0-0-2" start). Singles has no
         // such rule — a side-out always just swaps ends immediately.
         $serverNumber = $match->isSinglesMatch() ? 1 : 2;
-        $receivingTeam = $servingTeam === 1 ? 2 : 1;
 
         $serverSide = 1;
 
         if ($this->usesPositionRotation($match)) {
-            // Both teams start a fresh game at 0 (even) — right court. This is the
-            // one moment we pick a player by SLOT rather than by current court
-            // side, since there's no "current server" yet to derive identity from.
-            $serverSide = $this->seedTeamArrangement($match, $servingTeam, $serverNumber, 0);
-            $this->seedTeamArrangement($match, $receivingTeam, 1, 0);
+            // Team 1 seeds from score parity, same as always: the designated
+            // server (the quirk pick if team 1 is opening the game) goes right
+            // at 0 (even), partner takes left. This is the one moment we pick
+            // a player by SLOT rather than by current court side, since
+            // there's no "current server" yet to derive identity from.
+            $team1ServingSlot = $servingTeam === 1 ? $serverNumber : 1;
+            $this->seedTeamArrangement($match, 1, $team1ServingSlot, 0);
+
+            // Team 2 always starts Player 1 (slot 1) on the right, Player 2
+            // (slot 2) on the left — fixed, regardless of whether team 2 is
+            // serving or receiving this game (service-point only).
+            $match->players()->where('team', 2)->where('slot', 1)->update(['position' => 1]);
+            $match->players()->where('team', 2)->where('slot', 2)->update(['position' => 2]);
+
+            // The active server's side is wherever the seeding above actually
+            // placed them — look it up rather than assume, since team 2's
+            // fixed arrangement can put their quirk server (slot 2) on the
+            // left even though score parity alone would say right.
+            $serverSide = $match->players()
+                ->where('team', $servingTeam)
+                ->where('slot', $serverNumber)
+                ->value('position') ?? 1;
         }
 
         $startingPositions = $match->players()->pluck('position', 'id')->toArray();
@@ -129,10 +155,10 @@ class MatchScoringService
     }
 
     /**
-     * The serving team won the rally: they score, and the same player keeps serving.
-     * This is identical under service-point and rally-point scoring. Under
-     * service-point doubles, the server's court side flips to match the new
-     * score's parity (real pickleball rule) — their partner takes the other side.
+     * The serving team won the rally: they score, and the same player keeps
+     * serving. Identical under both scoring types. For doubles under either
+     * scoring type, the server's court side toggles and their partner takes
+     * the other side (server always changes side after scoring).
      */
     public function recordPoint(GameMatch $match, MatchGame $game): array
     {
@@ -157,6 +183,13 @@ class MatchScoringService
                 // on every side-out, so it no longer reliably maps to a specific player once
                 // a side-out has handed serve to whichever slot happened to be on the right.
                 $updates['server_position'] = $this->rotateServerPosition($match, $team, $game->server_position);
+            } elseif ($match->scoring_type === 'rally' && ! $match->isSinglesMatch()) {
+                // Rally-point's court-side rule: side is determined by the SERVING
+                // team's own current score, not by who served last or a toggle.
+                // Recomputed fresh from $newScore every time; see the identical
+                // rule in applySideOut() for when serve changes hands. Just the
+                // game's own field — no per-player tracking, no game-start seeding.
+                $updates['server_position'] = $this->rallyServerSide($team, $newScore);
             }
 
             $game->update($updates);
@@ -169,7 +202,10 @@ class MatchScoringService
 
     /**
      * The serving team lost the rally. What happens next depends on scoring type:
-     * - Rally point: the receiving team scores AND immediately becomes the new server.
+     * - Rally point: the receiving team scores AND immediately becomes the new
+     *   server. Court side is determined by THEIR score (after their point) —
+     *   same even-right/odd-left rule as recordPoint(), not carried over from
+     *   whoever served before.
      * - Service point (traditional): no score change, serve rotates per the
      *   doubles/singles rules below. Nobody's court side changes on a side-out —
      *   only Point does that. The new server is simply whoever the rotation has
@@ -191,12 +227,21 @@ class MatchScoringService
         if ($match->scoring_type === 'rally') {
             $receivingTeam = $game->serving_team === 1 ? 2 : 1;
             $column = $receivingTeam === 1 ? 'team1_score' : 'team2_score';
+            $newScore = $game->{$column} + 1;
 
-            $game->update([
-                $column => $game->{$column} + 1,
+            $updates = [
+                $column => $newScore,
                 'serving_team' => $receivingTeam,
                 'server_number' => 1,
-            ]);
+            ];
+
+            if (! $match->isSinglesMatch()) {
+                // Same rule as Point: side comes from the NEW server's team
+                // score (which just incremented as part of winning the rally).
+                $updates['server_position'] = $this->rallyServerSide($receivingTeam, $newScore);
+            }
+
+            $game->update($updates);
         } elseif ($match->isSinglesMatch()) {
             $newServingTeam = $game->serving_team === 1 ? 2 : 1;
 
@@ -407,14 +452,26 @@ class MatchScoringService
     }
 
     /**
-     * Court-side rotation only applies to doubles under traditional
-     * service-point scoring — singles has only one player per side (nothing
-     * to swap), and rally-point's every-rally-scores model doesn't use the
-     * classic right/left serving convention.
+     * Full player-position tracking (game-start seeding + per-player swap on
+     * Point) applies to service-point doubles only. Rally-point's much
+     * narrower "server's side flips after scoring" rule is handled separately
+     * and directly in recordPoint() — it doesn't go through this method or
+     * touch any MatchPlayer row.
      */
     protected function usesPositionRotation(GameMatch $match): bool
     {
         return ! $match->isSinglesMatch() && $match->scoring_type === 'service';
+    }
+
+    /**
+     * Rally-point court side — same mapping for both teams: even score serves
+     * right, odd serves left. $team is kept in the signature even though it's
+     * currently unused, since this has already flipped between a shared and a
+     * per-team mirrored mapping more than once.
+     */
+    protected function rallyServerSide(int $team, int $score): int
+    {
+        return $score % 2 === 0 ? 1 : 2; // right : left
     }
 
     /**

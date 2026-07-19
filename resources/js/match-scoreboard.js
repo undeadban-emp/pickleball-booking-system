@@ -55,9 +55,15 @@ export default function matchScoreboard(config) {
         // Standard pickleball score-calling order: serving team's score first,
         // then the receiving team's, then the server number — not simply
         // "team 1 - team 2", since either team can be the one serving.
+        // Rally-point never announces a server number (no "Server 1/2" concept
+        // when every rally scores) — just the two scores.
         get scoreLabel() {
             const servingScore = this.displayed.serving_team === 1 ? this.displayed.team1_score : this.displayed.team2_score;
             const receivingScore = this.displayed.serving_team === 1 ? this.displayed.team2_score : this.displayed.team1_score;
+
+            if (this.match.scoring_type === 'rally') {
+                return `${servingScore} - ${receivingScore}`;
+            }
 
             return `${servingScore} - ${receivingScore} - ${this.displayed.server_number}`;
         },
@@ -83,8 +89,11 @@ export default function matchScoreboard(config) {
         // Sorted by CURRENT court side (rotates during play) so the DOM order
         // itself swaps — this is what makes the swapped players visually trade
         // quadrants instead of just changing a highlight. Team 1's column reads
-        // top-to-bottom as Left-then-Right (descending); Team 2's reads
-        // Right-then-Left (ascending) — mirrored, matching the court view.
+        // top-to-bottom as Left-then-Right (descending, position 2 before 1);
+        // Team 2's reads Right-then-Left (ascending) — mirrored, matching the
+        // court view. Same rule for both scoring types — rally-point's team 1
+        // positions are static (never rotate mid-game), but they still need to
+        // land Left-on-top / Right-on-bottom.
         teamPlayers(team) {
             const positions = this.currentPositions;
             const direction = team === 1 ? -1 : 1;
