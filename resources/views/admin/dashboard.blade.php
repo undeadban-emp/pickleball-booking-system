@@ -4,7 +4,72 @@
         Good to see you, {{ auth()->user()->name }}.
     </h1>
 
-    <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    @php
+        $__salesChange = $yesterdaySalesTotal > 0
+            ? (($todaySalesTotal - $yesterdaySalesTotal) / $yesterdaySalesTotal) * 100
+            : ($todaySalesTotal > 0 ? 100 : null);
+    @endphp
+
+    <div class="mt-6 rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
+        <p class="flex items-center gap-1.5 text-sm font-semibold text-ink-950 dark:text-white">
+            <i class="ph ph-calendar-blank text-base"></i>
+            Sales for a date range
+        </p>
+        <form method="GET" class="mt-3 flex flex-wrap items-end gap-3">
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-ink-500 dark:text-ink-400">From</label>
+                <input type="date" name="from" value="{{ $rangeFrom?->toDateString() }}" max="{{ today()->toDateString() }}" required
+                    class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-ink-500 dark:text-ink-400">To</label>
+                <input type="date" name="to" value="{{ $rangeTo?->toDateString() }}" max="{{ today()->toDateString() }}" required
+                    class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
+            </div>
+            <button type="submit"
+                class="rounded-lg bg-ink-950 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-ink-800 dark:bg-accent-500 dark:text-ink-950 dark:hover:bg-accent-400">
+                View sales
+            </button>
+        </form>
+
+        @if ($rangeSalesTotal !== null)
+            <div class="mt-4 rounded-xl border border-ink-100 bg-ink-50 px-4 py-3 dark:border-ink-800 dark:bg-ink-950">
+                <p class="text-xs text-ink-500 dark:text-ink-400">{{ $rangeFrom->format('M j, Y') }} – {{ $rangeTo->format('M j, Y') }}</p>
+                <p class="mt-1 font-display text-2xl font-semibold text-ink-950 dark:text-white">₱{{ number_format($rangeSalesTotal, 2) }}</p>
+                <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">{{ $rangeSalesCount }} booking{{ $rangeSalesCount === 1 ? '' : 's' }} confirmed</p>
+            </div>
+        @endif
+    </div>
+
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="rounded-2xl border border-ink-200 bg-ink-950 p-5 text-white dark:border-ink-800">
+            <p class="flex items-center gap-1.5 text-sm text-ink-300">
+                <i class="ph ph-currency-circle-dollar text-base"></i>
+                Sales today
+            </p>
+            <p class="mt-1 font-display text-3xl font-semibold">₱{{ number_format($todaySalesTotal, 2) }}</p>
+            <div class="mt-2 flex items-center gap-2 text-xs text-ink-400">
+                <span>{{ $todaySalesCount }} booking{{ $todaySalesCount === 1 ? '' : 's' }} confirmed</span>
+                @if ($__salesChange !== null)
+                    <span class="inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 font-semibold {{ $__salesChange >= 0 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400' }}">
+                        <i class="ph {{ $__salesChange >= 0 ? 'ph-trend-up' : 'ph-trend-down' }}"></i>
+                        {{ number_format(abs($__salesChange), 0) }}% vs yesterday
+                    </span>
+                @endif
+            </div>
+        </div>
+
+        <div class="rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
+            <p class="flex items-center gap-1.5 text-sm text-ink-500 dark:text-ink-400">
+                <i class="ph ph-clock-counter-clockwise text-base"></i>
+                Sales yesterday
+            </p>
+            <p class="mt-1 font-display text-3xl font-semibold text-ink-950 dark:text-white">₱{{ number_format($yesterdaySalesTotal, 2) }}</p>
+            <p class="mt-2 text-xs text-ink-500 dark:text-ink-400">{{ $yesterdaySalesCount }} booking{{ $yesterdaySalesCount === 1 ? '' : 's' }} confirmed</p>
+        </div>
+    </div>
+
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <a href="{{ route('admin.bookings.index', ['status' => 'pending_payment']) }}" class="rounded-2xl border border-ink-200 bg-white p-5 transition-colors hover:border-accent-400 dark:border-ink-800 dark:bg-ink-900">
             <p class="text-sm text-ink-500 dark:text-ink-400">Awaiting payment review</p>
             <p class="mt-1 font-display text-3xl font-semibold text-ink-950 dark:text-white">{{ $pendingCount }}</p>

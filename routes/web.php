@@ -4,23 +4,38 @@ use App\Http\Controllers\Admin\BookingController as AdminBookingController;
 use App\Http\Controllers\Admin\CheckinController as AdminCheckinController;
 use App\Http\Controllers\Admin\CourtController as AdminCourtController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\GalleryImageController;
 use App\Http\Controllers\Admin\HeroImageController;
 use App\Http\Controllers\Admin\MatchController;
 use App\Http\Controllers\Admin\MatchGameController;
 use App\Http\Controllers\Admin\PaymentMethodController;
+use App\Models\Court;
+use App\Models\GalleryImage;
 use App\Models\HeroImage;
+use App\Models\OperatingHours;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\CourtBookingController;
 use App\Http\Controllers\Customer\BookingController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicBookingController;
 use App\Http\Controllers\QuickBookController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
+    $settings = OperatingHours::current();
+
     return view('welcome', [
         'heroImages' => HeroImage::orderBy('sort_order')->orderBy('id')->get(),
+        // Newest upload first on the homepage - independent of the admin's
+        // own manual sort_order (used for reordering in the Album admin page).
+        'galleryImages' => GalleryImage::orderByDesc('created_at')->orderByDesc('id')->get(),
+        'mapLat' => $settings->map_lat,
+        'mapLng' => $settings->map_lng,
+        'mapStyle' => $settings->map_style ?? 'satellite',
+        'mapLabel' => $settings->map_location
+            ?: Court::where('is_active', true)->whereNotNull('location')->value('location'),
     ]);
 });
 
@@ -52,13 +67,22 @@ Route::post('/book/{court}', [CourtBookingController::class, 'store'])->name('bo
 
 Route::middleware('auth')->group(function () {
     Route::get('/bookings', [BookingController::class, 'index'])->name('bookings.index');
+    Route::get('/bookings/poll', [BookingController::class, 'poll'])->name('bookings.poll');
+
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
 });
 
 Route::middleware(['auth', 'role:admin,staff'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('/bookings', [AdminBookingController::class, 'index'])->name('bookings.index');
+    Route::get('/bookings/create', [AdminBookingController::class, 'create'])->name('bookings.create');
+    Route::post('/bookings', [AdminBookingController::class, 'store'])->name('bookings.store');
+    Route::get('/bookings/schedule', [AdminBookingController::class, 'schedule'])->name('bookings.schedule');
     Route::get('/bookings/latest', [AdminBookingController::class, 'latest'])->name('bookings.latest');
+    Route::get('/bookings/pending-count', [AdminBookingController::class, 'pendingCount'])->name('bookings.pending-count');
 
     Route::get('/checkin', [AdminCheckinController::class, 'index'])->name('checkin.index');
     Route::post('/checkin/{booking}/confirm', [AdminCheckinController::class, 'confirm'])->name('checkin.confirm');
@@ -93,6 +117,15 @@ Route::middleware(['auth', 'role:admin,staff'])->prefix('admin')->name('admin.')
         Route::post('/settings', [SettingsController::class, 'update'])->name('settings.update');
         Route::post('/settings/logo/remove', [SettingsController::class, 'removeLogo'])->name('settings.logo.remove');
 
+        Route::get('/settings/hours', [SettingsController::class, 'editHours'])->name('settings.hours');
+        Route::post('/settings/hours', [SettingsController::class, 'updateHours'])->name('settings.hours.update');
+
+        Route::get('/settings/rates', [AdminCourtController::class, 'rates'])->name('settings.rates.index');
+        Route::put('/settings/rates/{court}', [AdminCourtController::class, 'updateRate'])->name('settings.rates.update');
+
+        Route::get('/settings/location', [SettingsController::class, 'editLocation'])->name('settings.location');
+        Route::put('/settings/location', [SettingsController::class, 'updateLocation'])->name('settings.location.update');
+
         Route::get('/payment-methods', [PaymentMethodController::class, 'index'])->name('payment-methods.index');
         Route::post('/payment-methods', [PaymentMethodController::class, 'store'])->name('payment-methods.store');
         Route::put('/payment-methods/{paymentMethod}', [PaymentMethodController::class, 'update'])->name('payment-methods.update');
@@ -104,5 +137,11 @@ Route::middleware(['auth', 'role:admin,staff'])->prefix('admin')->name('admin.')
         Route::post('/hero-images/{heroImage}/move-up', [HeroImageController::class, 'moveUp'])->name('hero-images.move-up');
         Route::post('/hero-images/{heroImage}/move-down', [HeroImageController::class, 'moveDown'])->name('hero-images.move-down');
         Route::delete('/hero-images/{heroImage}', [HeroImageController::class, 'destroy'])->name('hero-images.destroy');
+
+        Route::get('/gallery-images', [GalleryImageController::class, 'index'])->name('gallery-images.index');
+        Route::post('/gallery-images', [GalleryImageController::class, 'store'])->name('gallery-images.store');
+        Route::post('/gallery-images/{galleryImage}/move-up', [GalleryImageController::class, 'moveUp'])->name('gallery-images.move-up');
+        Route::post('/gallery-images/{galleryImage}/move-down', [GalleryImageController::class, 'moveDown'])->name('gallery-images.move-down');
+        Route::delete('/gallery-images/{galleryImage}', [GalleryImageController::class, 'destroy'])->name('gallery-images.destroy');
     });
 });

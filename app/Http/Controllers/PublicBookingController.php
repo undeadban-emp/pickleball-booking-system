@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\InvalidBookingTransitionException;
 use App\Models\Booking;
+use App\Models\OperatingHours;
 use App\Models\PaymentMethod;
 use App\Services\BookingService;
 use Illuminate\Http\Request;
@@ -19,21 +20,33 @@ class PublicBookingController extends Controller
             ->with(['court', 'slots', 'statusLogs', 'paymentMethod'])
             ->firstOrFail();
 
+        $paymentHoldMinutes = OperatingHours::current()->payment_hold_minutes ?? 30;
+        $booking = $this->bookings->expireBookingIfStale($booking, $paymentHoldMinutes);
+
         $paymentMethods = PaymentMethod::where('is_active', true)
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get();
 
-        return view('bookings.show', ['booking' => $booking, 'paymentMethods' => $paymentMethods]);
+        return view('bookings.show', [
+            'booking' => $booking,
+            'paymentMethods' => $paymentMethods,
+            'paymentHoldMinutes' => $paymentHoldMinutes,
+        ]);
     }
 
     /**
      * Lightweight polling endpoint so the payment page can auto-detect status
-     * changes (admin approval/rejection) without a full page reload.
+     * changes (admin approval/rejection) without a full page reload. Also
+     * lazily expires this booking the instant its own countdown runs out,
+     * rather than waiting on the once-a-minute scheduled sweep.
      */
     public function status(string $token)
     {
         $booking = Booking::where('receipt_token', $token)->firstOrFail();
+
+        $holdMinutes = OperatingHours::current()->payment_hold_minutes ?? 30;
+        $booking = $this->bookings->expireBookingIfStale($booking, $holdMinutes);
 
         return response()
             ->json([

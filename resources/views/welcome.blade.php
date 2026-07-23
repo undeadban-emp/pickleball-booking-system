@@ -79,7 +79,7 @@
     </section>
 
     {{-- Facilities & amenities --}}
-    <section class="mx-auto max-w-7xl px-4 py-16 text-center sm:px-6 lg:px-8">
+    <section class="mx-auto max-w-7xl px-4 py-10 text-center sm:px-6 sm:py-14 lg:px-8">
         <p class="flex items-center justify-center gap-2 text-xs font-semibold tracking-[0.18em] text-accent-700 uppercase dark:text-accent-400">
             <span class="h-px w-4 bg-accent-500"></span>
             Facilities &amp; amenities
@@ -110,7 +110,177 @@
         </div>
     </section>
 
+    {{-- Rebooking / weather policy reminder --}}
+    <section class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div class="flex flex-col items-start gap-4 rounded-3xl border border-ink-100 bg-white p-6 shadow-[0_1px_2px_rgba(24,24,27,0.04)] sm:flex-row sm:items-center sm:p-7 dark:border-ink-800 dark:bg-ink-900">
+            <span class="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent-50 text-accent-600 dark:bg-accent-950 dark:text-accent-400">
+                <span class="absolute inset-0 rounded-full bg-accent-400/50 animate-[ping_2.5s_cubic-bezier(0,0,0.2,1)_infinite] motion-reduce:animate-none dark:bg-accent-500/40"></span>
+                <i class="ph ph-cloud-rain relative text-xl"></i>
+            </span>
+            <div>
+                <p class="font-display text-base font-semibold text-ink-950 dark:text-white">Rained out? We've got you.</p>
+                <p class="mt-1 text-sm leading-relaxed text-ink-500 dark:text-ink-400">
+                    Our courts are open-air, so rebooking only applies when weather cancels your session. Any other reschedule, just get in touch.
+                </p>
+            </div>
+        </div>
+    </section>
+
     @include('partials.availability-widget')
+
+    @if ($mapLat && $mapLng)
+        <section class="mx-auto max-w-7xl px-4 py-10 text-center sm:px-6 sm:py-14 lg:px-8">
+            <p class="flex items-center justify-center gap-2 text-xs font-semibold tracking-[0.18em] text-accent-700 uppercase dark:text-accent-400">
+                <span class="h-px w-4 bg-accent-500"></span>
+                Find us
+                <span class="h-px w-4 bg-accent-500"></span>
+            </p>
+            @if ($mapLabel)
+                <h2 class="mt-3 font-display text-2xl font-semibold tracking-tight text-ink-950 md:text-3xl dark:text-white">
+                    {{ $mapLabel }}
+                </h2>
+            @endif
+
+            <div
+                id="home-map"
+                class="isolate relative mt-8 h-80 w-full overflow-hidden rounded-3xl border border-ink-100 sm:h-96 dark:border-ink-800"
+            ></div>
+        </section>
+
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+        @include('partials.map-styles-script')
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+        <script>
+            (function () {
+                var lat = {{ $mapLat }};
+                var lng = {{ $mapLng }};
+                var style = window.MAP_STYLES[@js($mapStyle)] || window.MAP_STYLES.standard;
+
+                var map = L.map('home-map', { scrollWheelZoom: true, touchZoom: true, tap: true }).setView([lat, lng], 15);
+                L.tileLayer(style.url, style).addTo(map);
+                L.marker([lat, lng]).addTo(map)@if($mapLabel).bindPopup(@js($mapLabel))@endif;
+            })();
+        </script>
+    @elseif ($mapLabel)
+        <section class="mx-auto max-w-7xl px-4 py-10 text-center sm:px-6 sm:py-14 lg:px-8">
+            <p class="flex items-center justify-center gap-2 text-xs font-semibold tracking-[0.18em] text-accent-700 uppercase dark:text-accent-400">
+                <span class="h-px w-4 bg-accent-500"></span>
+                Find us
+                <span class="h-px w-4 bg-accent-500"></span>
+            </p>
+            <h2 class="mt-3 font-display text-2xl font-semibold tracking-tight text-ink-950 md:text-3xl dark:text-white">
+                {{ $mapLabel }}
+            </h2>
+
+            <div class="mt-8 overflow-hidden rounded-3xl border border-ink-100 dark:border-ink-800">
+                <iframe
+                    src="https://www.google.com/maps?q={{ urlencode($mapLabel) }}&output=embed"
+                    class="h-80 w-full sm:h-96"
+                    style="border:0"
+                    loading="lazy"
+                    referrerpolicy="no-referrer-when-downgrade"
+                    title="Location map"
+                ></iframe>
+            </div>
+        </section>
+    @endif
+
+    @if ($galleryImages->isNotEmpty())
+        <section
+            class="mx-auto max-w-7xl px-4 py-10 text-center sm:px-6 sm:py-14 lg:px-8"
+            x-data="{
+                showAllPhotos: false,
+                lightboxOpen: false,
+                lightboxIndex: 0,
+                photos: @js($galleryImages->map(fn ($image) => $image->url())),
+                open(index) { this.lightboxIndex = index; this.lightboxOpen = true; },
+                next() { this.lightboxIndex = (this.lightboxIndex + 1) % this.photos.length; },
+                prev() { this.lightboxIndex = (this.lightboxIndex - 1 + this.photos.length) % this.photos.length; },
+            }"
+            @keydown.escape.window="lightboxOpen = false"
+            @keydown.arrow-right.window="lightboxOpen && next()"
+            @keydown.arrow-left.window="lightboxOpen && prev()"
+        >
+            <p class="flex items-center justify-center gap-2 text-xs font-semibold tracking-[0.18em] text-accent-700 uppercase dark:text-accent-400">
+                <span class="h-px w-4 bg-accent-500"></span>
+                Gallery
+                <span class="h-px w-4 bg-accent-500"></span>
+            </p>
+            <h2 class="mt-3 font-display text-2xl font-semibold tracking-tight text-ink-950 md:text-3xl dark:text-white">
+                A look around
+            </h2>
+
+            <div class="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
+                @foreach ($galleryImages as $image)
+                    <button
+                        type="button"
+                        @click="open({{ $loop->index }})"
+                        class="group aspect-square cursor-zoom-in overflow-hidden rounded-2xl border border-ink-100 dark:border-ink-800"
+                        @if ($loop->index >= 8) x-show="showAllPhotos" x-cloak @endif
+                    >
+                        <img src="{{ $image->url() }}" alt="Facility photo" class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy">
+                    </button>
+                @endforeach
+            </div>
+
+            @if ($galleryImages->count() > 8)
+                <button
+                    type="button"
+                    @click="showAllPhotos = !showAllPhotos"
+                    class="mt-6 inline-flex items-center gap-1.5 rounded-full border border-ink-200 px-5 py-2.5 text-sm font-semibold text-ink-700 transition-colors hover:border-ink-400 dark:border-ink-700 dark:text-ink-300 dark:hover:border-ink-500"
+                >
+                    <span x-text="showAllPhotos ? 'Show less' : 'Show more'"></span>
+                    <i class="ph text-base" :class="showAllPhotos ? 'ph-caret-up' : 'ph-caret-down'"></i>
+                </button>
+            @endif
+
+            <div
+                x-show="lightboxOpen"
+                x-cloak
+                x-transition.opacity
+                class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
+                @click.self="lightboxOpen = false"
+            >
+                <button
+                    type="button"
+                    @click="lightboxOpen = false"
+                    class="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+                    aria-label="Close"
+                >
+                    <i class="ph ph-x text-xl"></i>
+                </button>
+
+                <button
+                    type="button"
+                    @click.stop="prev()"
+                    x-show="photos.length > 1"
+                    class="absolute left-2 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-white/15 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/30 sm:left-6"
+                    aria-label="Previous photo"
+                >
+                    <i class="ph ph-caret-left text-2xl"></i>
+                </button>
+
+                <img
+                    :src="photos[lightboxIndex]"
+                    alt="Facility photo"
+                    class="max-h-[85vh] max-w-full rounded-lg object-contain shadow-2xl"
+                    @click.stop
+                >
+
+                <button
+                    type="button"
+                    @click.stop="next()"
+                    x-show="photos.length > 1"
+                    class="absolute right-2 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-white/15 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/30 sm:right-6"
+                    aria-label="Next photo"
+                >
+                    <i class="ph ph-caret-right text-2xl"></i>
+                </button>
+
+                <p class="absolute bottom-4 left-1/2 -translate-x-1/2 text-sm text-white/70" x-text="(lightboxIndex + 1) + ' / ' + photos.length"></p>
+            </div>
+        </section>
+    @endif
 
     {{-- How it works
     <section id="how-it-works" class="border-t border-ink-100 bg-ink-100/40 dark:border-ink-800 dark:bg-ink-900/40">

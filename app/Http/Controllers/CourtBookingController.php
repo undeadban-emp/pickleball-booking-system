@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exceptions\NonContiguousSlotsException;
 use App\Exceptions\SlotUnavailableException;
 use App\Models\Court;
+use App\Models\OperatingHours;
 use App\Services\BookingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -25,7 +26,10 @@ class CourtBookingController extends Controller
 
     public function show(Court $court)
     {
-        return view('book.show', ['court' => $court]);
+        return view('book.show', [
+            'court' => $court,
+            'periodBoundaries' => OperatingHours::current()->periodBoundaries(),
+        ]);
     }
 
     public function store(Request $request, Court $court)

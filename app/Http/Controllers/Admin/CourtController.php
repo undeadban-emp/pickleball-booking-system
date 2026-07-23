@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Court;
+use App\Models\CourtSlot;
 use App\Models\OperatingHours;
 use App\Support\SlotGenerator;
 use Illuminate\Http\Request;
@@ -45,9 +46,46 @@ class CourtController extends Controller
 
         $data['is_active'] = $request->boolean('is_active');
 
+        $priceChanged = bccomp((string) $court->default_price, (string) $data['default_price'], 2) !== 0;
+
         $court->update($data);
 
+        if ($priceChanged) {
+            $this->syncAvailableSlotPrices($court);
+        }
+
         return back()->with('status', "{$court->name} updated.");
+    }
+
+    public function rates()
+    {
+        $courts = Court::orderBy('name')->get();
+
+        return view('admin.settings.rates', ['courts' => $courts]);
+    }
+
+    public function updateRate(Request $request, Court $court)
+    {
+        $data = $request->validate([
+            'default_price' => ['required', 'numeric', 'min:0'],
+        ]);
+
+        $court->update($data);
+
+        $this->syncAvailableSlotPrices($court);
+
+        return back()->with('status', "{$court->name}'s rate updated to ₱".number_format($data['default_price'], 2).'/hr.');
+    }
+
+    /**
+     * Rate changes only take effect on slots that are still open — bookings
+     * already made (and their locked-in price) are historical and untouched.
+     */
+    protected function syncAvailableSlotPrices(Court $court): void
+    {
+        CourtSlot::where('court_id', $court->id)
+            ->where('status', 'available')
+            ->update(['price' => $court->default_price]);
     }
 
     public function toggleActive(Court $court)

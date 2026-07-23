@@ -4,10 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Court;
+use App\Models\OperatingHours;
+use App\Services\BookingService;
 use Illuminate\Http\Request;
 
 class CourtController extends Controller
 {
+    public function __construct(protected BookingService $bookings) {}
+
     public function index()
     {
         return Court::query()
@@ -33,12 +37,21 @@ class CourtController extends Controller
 
         $date = $request->date('date')->toDateString();
 
+        // Release any slot held by an unpaid booking that's timed out, right
+        // as this date is being viewed - so it shows available immediately
+        // instead of waiting on the once-a-minute scheduled sweep.
+        if ($holdMinutes = OperatingHours::current()->payment_hold_minutes) {
+            $this->bookings->expireStalePending($holdMinutes, $date);
+        }
+
         $slots = $court->slots()
             ->where('slot_date', $date)
             ->where('status', 'available')
             ->orderBy('start_time')
             ->get(['id', 'start_time', 'end_time', 'price', 'status']);
 
-        return response()->json(['data' => $slots]);
+        return response()
+            ->json(['data' => $slots])
+            ->header('Cache-Control', 'no-store');
     }
 }

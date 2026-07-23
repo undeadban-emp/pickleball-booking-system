@@ -1,4 +1,6 @@
 @php
+    use Illuminate\Support\Carbon;
+
     // A pending_payment booking with a GCash reference already submitted is
     // sitting in the admin review queue, not waiting on the customer anymore
     // - give it its own color/label instead of looking identical to "customer
@@ -16,52 +18,48 @@
     $statusLabel = fn ($booking) => $booking->status === 'pending_payment' && $booking->hasSubmittedPayment()
         ? 'Awaiting Approval'
         : str($booking->status)->replace('_', ' ')->headline();
+
+    $originalBookingWhen = function ($booking) {
+        $slots = $booking->rebookedFrom?->slots;
+        $first = $slots?->first();
+        $last = $slots?->last();
+
+        if (! $first) {
+            return null;
+        }
+
+        $when = $first->slot_date->format('M j, Y').', '.Carbon::parse($first->start_time)->format('g:i A');
+
+        return $when.' – '.Carbon::parse($last->end_time)->format('g:i A');
+    };
+
+    $todayStr = Carbon::today()->toDateString();
+    $selectedStr = $date->toDateString();
+
+    $monthStart = $date->copy()->startOfMonth();
+    $monthEnd = $date->copy()->endOfMonth();
+    $gridStart = $monthStart->copy()->startOfWeek(Carbon::SUNDAY);
+    $gridEnd = $monthEnd->copy()->endOfWeek(Carbon::SATURDAY);
+
+    $weeks = [];
+    $cursor = $gridStart->copy();
+    while ($cursor->lte($gridEnd)) {
+        $week = [];
+        for ($i = 0; $i < 7; $i++) {
+            $week[] = $cursor->copy();
+            $cursor->addDay();
+        }
+        $weeks[] = $week;
+    }
 @endphp
 
-<x-layouts.admin :title="'Bookings'">
+<x-layouts.admin :title="'Day Schedule'">
 
-    <div
-        x-data="{
-            activeId: null,
-            lastId: {{ $bookings->max('id') ?? 0 }},
-            newCount: 0,
-            poll() {
-                fetch('{{ route('admin.bookings.latest') }}?last_id=' + this.lastId, { headers: { Accept: 'application/json' } })
-                    .then(res => res.ok ? res.json() : null)
-                    .then(payload => {
-                        if (!payload || !payload.data.length) return;
-                        this.newCount += payload.data.length;
-                        this.lastId = payload.data[payload.data.length - 1].id;
-                        if (this.activeId === null) {
-                            window.location.reload();
-                        }
-                    })
-                    .catch(() => {});
-            }
-        }"
-        x-init="setInterval(() => poll(), 5000)"
-        @keydown.escape.window="activeId = null"
-    >
+    <div x-data="{ activeId: null }" @keydown.escape.window="activeId = null">
 
     <div class="flex flex-wrap items-center justify-between gap-3">
-        <h1 class="font-display text-2xl font-semibold tracking-tight text-ink-950 dark:text-white">Bookings</h1>
-        <a href="{{ route('admin.bookings.create') }}" class="flex items-center gap-1.5 rounded-lg bg-ink-950 px-4 py-2 text-sm font-semibold text-white hover:bg-ink-800 dark:bg-accent-500 dark:text-ink-950 dark:hover:bg-accent-400">
-            <i class="ph ph-plus text-base"></i>
-            New booking
-        </a>
+        <h1 class="font-display text-2xl font-semibold tracking-tight text-ink-950 dark:text-white">Day Schedule</h1>
     </div>
-
-    <button
-        type="button"
-        x-show="newCount > 0"
-        x-cloak
-        x-transition
-        @click="window.location.reload()"
-        class="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-accent-300 bg-accent-50 px-4 py-3 text-sm font-semibold text-accent-800 transition-colors hover:bg-accent-100 dark:border-accent-800 dark:bg-accent-950 dark:text-accent-200 dark:hover:bg-accent-900"
-    >
-        <i class="ph ph-bell-ringing"></i>
-        <span x-text="newCount"></span> new booking<span x-show="newCount > 1">s</span> came in. Tap to refresh.
-    </button>
 
     @if (session('status'))
         <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
@@ -74,146 +72,127 @@
         </div>
     @enderror
 
-    {{-- Filters --}}
-    <form method="GET" class="mt-6 flex flex-wrap items-end gap-3 rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900">
-        <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Status</label>
-            <select name="status" class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-800 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200">
-                <option value="">All</option>
-                @foreach (['pending_payment' => 'Pending payment', 'confirmed' => 'Confirmed', 'rejected' => 'Rejected', 'cancelled' => 'Cancelled', 'completed' => 'Completed'] as $value => $label)
-                    <option value="{{ $value }}" @selected(($filters['status'] ?? '') === $value)>{{ $label }}</option>
+    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[260px_1fr] lg:items-start">
+        {{-- Calendar --}}
+        <div class="mx-auto w-full max-w-65 rounded-2xl border border-ink-200 bg-white p-3 dark:border-ink-800 dark:bg-ink-900 lg:mx-0">
+            <div class="flex items-center justify-between">
+                <a
+                    href="{{ route('admin.bookings.schedule', ['date' => $monthStart->copy()->subMonth()->startOfMonth()->toDateString()]) }}"
+                    class="rounded-lg p-1.5 text-ink-500 hover:bg-ink-100 hover:text-ink-800 dark:text-ink-400 dark:hover:bg-ink-800 dark:hover:text-white"
+                    aria-label="Previous month"
+                >
+                    <i class="ph ph-caret-left text-sm"></i>
+                </a>
+                <p class="font-display text-xs font-semibold text-ink-900 dark:text-white">{{ $date->format('F Y') }}</p>
+                <a
+                    href="{{ route('admin.bookings.schedule', ['date' => $monthStart->copy()->addMonth()->startOfMonth()->toDateString()]) }}"
+                    class="rounded-lg p-1.5 text-ink-500 hover:bg-ink-100 hover:text-ink-800 dark:text-ink-400 dark:hover:bg-ink-800 dark:hover:text-white"
+                    aria-label="Next month"
+                >
+                    <i class="ph ph-caret-right text-sm"></i>
+                </a>
+            </div>
+
+            <div class="mt-2 grid grid-cols-7 gap-0.5 text-center text-[10px] font-medium tracking-wide text-ink-400 uppercase">
+                @foreach (['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] as $d)
+                    <div class="py-1">{{ $d }}</div>
                 @endforeach
-            </select>
-        </div>
+            </div>
 
-        <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Court</label>
-            <select name="court_id" class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-800 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200">
-                <option value="">All courts</option>
-                @foreach ($courts as $court)
-                    <option value="{{ $court->id }}" @selected((string) ($filters['court_id'] ?? '') === (string) $court->id)>{{ $court->name }}</option>
+            <div class="mt-1 grid grid-cols-7 gap-0.5">
+                @foreach ($weeks as $week)
+                    @foreach ($week as $day)
+                        @php
+                            $dayStr = $day->toDateString();
+                            $inMonth = $day->month === $date->month;
+                            $isToday = $dayStr === $todayStr;
+                            $isSelected = $dayStr === $selectedStr;
+                        @endphp
+                        <a
+                            href="{{ route('admin.bookings.schedule', ['date' => $dayStr]) }}"
+                            class="flex aspect-square items-center justify-center rounded-md text-xs transition-colors
+                                {{ $isSelected ? 'bg-accent-500 font-semibold text-ink-950' : ($isToday ? 'border border-accent-400 text-ink-900 dark:text-white' : 'text-ink-700 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800') }}
+                                {{ ! $inMonth && ! $isSelected ? 'text-ink-300 dark:text-ink-700' : '' }}"
+                        >
+                            {{ $day->day }}
+                        </a>
+                    @endforeach
                 @endforeach
-            </select>
+            </div>
+
+            <a
+                href="{{ route('admin.bookings.schedule', ['date' => $todayStr]) }}"
+                class="mt-4 block rounded-lg border border-ink-200 px-3 py-2 text-center text-sm font-medium text-ink-700 hover:border-ink-400 hover:text-ink-950 dark:border-ink-700 dark:text-ink-300 dark:hover:text-white"
+            >
+                Jump to today
+            </a>
         </div>
 
-        <div class="flex flex-1 min-w-[180px] flex-col gap-1">
-            <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Search</label>
-            <input type="text" name="search" value="{{ $filters['search'] ?? '' }}" placeholder="Code, name, or phone"
-                class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-800 placeholder:text-ink-400 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200">
-        </div>
+        {{-- Selected day's bookings --}}
+        <div class="rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
+            <div class="flex items-center justify-between">
+                <h2 class="font-display text-lg font-semibold text-ink-950 dark:text-white">{{ $date->format('l, F j, Y') }}</h2>
+                <span class="rounded-full bg-ink-100 px-2.5 py-1 text-xs font-semibold text-ink-600 dark:bg-ink-800 dark:text-ink-300">
+                    {{ $bookings->count() }} booking{{ $bookings->count() === 1 ? '' : 's' }}
+                </span>
+            </div>
 
-        <button type="submit" class="rounded-lg bg-ink-950 px-4 py-2 text-sm font-semibold text-white hover:bg-ink-800 dark:bg-accent-500 dark:text-ink-950 dark:hover:bg-accent-400">
-            Filter
-        </button>
-        @if (array_filter($filters))
-            <a href="{{ route('admin.bookings.index') }}" class="text-sm font-medium text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-white">Clear</a>
-        @endif
-    </form>
-
-    {{-- Table --}}
-    <div class="mt-4 overflow-x-auto rounded-2xl border border-ink-200 dark:border-ink-800">
-        <table class="w-full min-w-[900px] text-left text-sm">
-            <thead class="bg-ink-100 text-xs font-medium tracking-wide text-ink-500 uppercase dark:bg-ink-800 dark:text-ink-400">
-                <tr>
-                    <th class="px-4 py-3">Code</th>
-                    <th class="px-4 py-3">Customer</th>
-                    <th class="px-4 py-3">Court</th>
-                    <th class="px-4 py-3">Reference</th>
-                    <th class="px-4 py-3">Total</th>
-                    <th class="px-4 py-3">Status</th>
-                    <th class="px-4 py-3 text-right">Actions</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-ink-100 bg-white dark:divide-ink-800 dark:bg-ink-900">
+            <ul class="mt-4 space-y-3">
                 @forelse ($bookings as $booking)
-                    <tr
+                    <li
                         @click="activeId = {{ $booking->id }}"
-                        class="cursor-pointer transition-colors hover:bg-ink-50 dark:hover:bg-ink-800/50"
+                        class="flex cursor-pointer items-center gap-4 rounded-xl border border-ink-100 p-3 transition-colors hover:bg-ink-50 dark:border-ink-800 dark:hover:bg-ink-800/50"
                     >
-                        <td class="px-4 py-3 font-mono text-xs text-ink-600 dark:text-ink-400">{{ $booking->booking_code }}</td>
-                        <td class="px-4 py-3">
-                            <p class="font-medium text-ink-900 dark:text-ink-100">{{ $booking->contactName() }}</p>
-                            @if ($booking->isGuestBooking())
-                                <p class="text-xs text-ink-500 dark:text-ink-500">{{ $booking->guest_phone }} · Guest</p>
-                            @endif
+                        <div class="flex w-24 shrink-0 flex-col items-start">
+                            @foreach ($booking->slots as $slot)
+                                <span class="font-mono text-sm font-semibold text-ink-900 dark:text-ink-100">{{ Carbon::parse($slot->start_time)->format('g:i A') }}</span>
+                            @endforeach
+                        </div>
+
+                        <div class="min-w-0 flex-1">
+                            <p class="truncate font-medium text-ink-900 dark:text-ink-100">{{ $booking->contactName() }}</p>
+                            <p class="truncate text-xs text-ink-500 dark:text-ink-400">
+                                {{ $booking->court->name }}
+                                @if ($booking->isGuestBooking())
+                                    · Guest
+                                @endif
+                            </p>
                             @if ($booking->rebookedFrom)
-                                <p class="text-xs font-medium text-accent-700 dark:text-accent-400">
+                                <p class="truncate text-xs font-medium text-accent-700 dark:text-accent-400">
                                     <i class="ph ph-arrow-clockwise text-xs"></i>
                                     Rebooked from {{ $booking->rebookedFrom->booking_code }}
+                                    @if ($originalBookingWhen($booking))
+                                        (originally {{ $originalBookingWhen($booking) }})
+                                    @endif
                                 </p>
                             @endif
-                        </td>
-                        <td class="px-4 py-3 text-ink-700 dark:text-ink-300">{{ $booking->court->name }}</td>
-                        <td class="px-4 py-3 text-ink-700 dark:text-ink-300">
-                            {{ $booking->gcash_reference ?? 'Not submitted' }}
-                            @if ($booking->paymentProofUrl())
-                                <i class="ph ph-image ml-1 text-sm text-accent-700 dark:text-accent-400" title="Proof of payment attached"></i>
-                            @endif
-                        </td>
-                        <td class="px-4 py-3 font-medium text-ink-900 dark:text-ink-100">₱{{ number_format($booking->total_price, 2) }}</td>
-                        <td class="px-4 py-3">
+                        </div>
+
+                        <div class="flex shrink-0 flex-col items-end gap-0.5">
                             <span class="rounded-full px-2.5 py-1 text-xs font-semibold {{ $statusBadge($booking) }}">
                                 {{ $statusLabel($booking) }}
                             </span>
                             @if ($booking->status === 'cancelled')
-                                <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">{{ $booking->cancellationSummary() }}</p>
+                                <p class="max-w-40 text-right text-xs text-ink-500 dark:text-ink-400">{{ $booking->cancellationSummary() }}</p>
                             @endif
-                        </td>
-                        <td class="px-4 py-3" @click.stop>
-                            <div class="flex items-center justify-end gap-2">
-                                <button type="button" @click="activeId = {{ $booking->id }}" class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-ink-400 hover:text-ink-800 dark:border-ink-700 dark:text-ink-400" title="View details">
-                                    <i class="ph ph-eye text-base"></i>
-                                </button>
-                                @if (auth()->user()->isAdmin() || auth()->user()->isStaff())
-                                    <a
-                                        href="{{ route('admin.bookings.create', ['guest_name' => $booking->contactName(), 'guest_phone' => $booking->contactPhone(), 'guest_email' => $booking->contactEmail(), 'court_id' => $booking->court_id, 'hours' => $booking->slots->count(), 'rebook_from' => $booking->id]) }}"
-                                        class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-ink-400 hover:text-ink-800 dark:border-ink-700 dark:text-ink-400"
-                                        title="Rebook this customer"
-                                    >
-                                        <i class="ph ph-arrow-clockwise text-base"></i>
-                                    </a>
-                                @endif
-                                @if ($booking->status === 'pending_payment' && (auth()->user()->isAdmin() || auth()->user()->isStaff()))
-                                    <form
-                                        method="POST"
-                                        action="{{ route('admin.bookings.approve', $booking) }}"
-                                        onsubmit="return confirmSubmit(this, { title: 'Approve this booking?', text: 'The customer will be notified that their booking is confirmed.', icon: 'question', confirmButtonText: 'Approve', confirmButtonColor: '#10b981' });"
-                                    >
-                                        @csrf
-                                        <button type="submit" class="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600">Approve</button>
-                                    </form>
-                                    <form
-                                        method="POST"
-                                        action="{{ route('admin.bookings.reject', $booking) }}"
-                                        onsubmit="return confirmSubmit(this, { title: 'Reject this booking?', text: 'The customer will be notified that their payment was not confirmed.', icon: 'warning', confirmButtonText: 'Reject', confirmButtonColor: '#e11d48' });"
-                                    >
-                                        @csrf
-                                        <button type="submit" class="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-600">Reject</button>
-                                    </form>
-                                @elseif ($booking->status === 'confirmed' && (auth()->user()->isAdmin() || auth()->user()->isStaff()))
-                                    <form
-                                        method="POST"
-                                        action="{{ route('admin.bookings.cancel', $booking) }}"
-                                        onsubmit="return confirmSubmit(this, { title: 'Cancel this booking?', text: 'This will free up the slot and notify the customer.', icon: 'warning', confirmButtonText: 'Cancel booking', confirmButtonColor: '#e11d48' });"
-                                    >
-                                        @csrf
-                                        <button type="submit" class="rounded-lg border border-ink-200 px-3 py-1.5 text-xs font-semibold text-ink-700 hover:border-rose-400 hover:text-rose-600 dark:border-ink-700 dark:text-ink-300">Cancel</button>
-                                    </form>
-                                @endif
-                            </div>
-                        </td>
-                    </tr>
-                @empty
-                    <tr>
-                        <td colspan="7" class="px-4 py-8 text-center text-sm text-ink-500 dark:text-ink-400">No bookings match these filters.</td>
-                    </tr>
-                @endforelse
-            </tbody>
-        </table>
-    </div>
+                        </div>
 
-    <div class="mt-4">
-        {{ $bookings->links() }}
+                        <button
+                            type="button"
+                            @click.stop="activeId = {{ $booking->id }}"
+                            class="shrink-0 rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-ink-400 hover:text-ink-800 dark:border-ink-700 dark:text-ink-400"
+                            title="View booking info"
+                        >
+                            <i class="ph ph-eye text-base"></i>
+                        </button>
+                    </li>
+                @empty
+                    <li class="rounded-xl border border-dashed border-ink-200 p-6 text-center text-sm text-ink-500 dark:border-ink-800 dark:text-ink-400">
+                        No bookings on this day.
+                    </li>
+                @endforelse
+            </ul>
+        </div>
     </div>
 
     {{-- Detail sheet --}}
@@ -266,7 +245,11 @@
                         @if ($booking->rebookedFrom)
                             <p class="mt-1 text-xs font-medium text-accent-700 dark:text-accent-400">
                                 <i class="ph ph-arrow-clockwise"></i>
-                                Rebooked from {{ $booking->rebookedFrom->booking_code }} — no new payment taken
+                                Rebooked from {{ $booking->rebookedFrom->booking_code }}
+                                @if ($originalBookingWhen($booking))
+                                    (originally {{ $originalBookingWhen($booking) }})
+                                @endif
+                                — no new payment taken
                             </p>
                         @endif
                     </div>
@@ -276,7 +259,7 @@
                         <p class="mt-1 font-medium text-ink-900 dark:text-ink-100">{{ $booking->court->name }}</p>
                         <ul class="mt-1 space-y-0.5 text-sm text-ink-600 dark:text-ink-400">
                             @foreach ($booking->slots->sortBy('start_time') as $slot)
-                                <li>{{ \Illuminate\Support\Carbon::parse($slot->slot_date)->format('M j, Y') }}, {{ \Illuminate\Support\Carbon::parse($slot->start_time)->format('g:i A') }} to {{ \Illuminate\Support\Carbon::parse($slot->end_time)->format('g:i A') }}</li>
+                                <li>{{ Carbon::parse($slot->slot_date)->format('M j, Y') }}, {{ Carbon::parse($slot->start_time)->format('g:i A') }} to {{ Carbon::parse($slot->end_time)->format('g:i A') }}</li>
                             @endforeach
                         </ul>
                         <p class="mt-2 font-display text-xl font-semibold text-ink-950 dark:text-white">₱{{ number_format($booking->total_price, 2) }}</p>
@@ -380,35 +363,6 @@
                                 </form>
                             @endif
                         </div>
-
-                        @if ($booking->status === 'completed' && $booking->checked_in_at !== null)
-                            <div class="border-t border-ink-100 pt-4 lg:col-span-2 dark:border-ink-800">
-                                <p class="text-xs font-semibold tracking-wide text-ink-400 uppercase">Match</p>
-
-                                @if ($booking->matches->isNotEmpty())
-                                    <ul class="mt-2 space-y-1.5">
-                                        @foreach ($booking->matches->sortByDesc('id') as $match)
-                                            <li>
-                                                <a href="{{ route('admin.matches.show', $match) }}" class="inline-flex items-center gap-1.5 text-sm font-medium text-accent-700 hover:text-accent-800 dark:text-accent-400">
-                                                    <i class="ph {{ in_array($match->status, ['verifying', 'completed']) ? 'ph-trophy' : 'ph-play-circle' }}"></i>
-                                                    {{ in_array($match->status, ['verifying', 'completed']) ? 'View results' : 'Score match' }}
-                                                    <span class="text-xs font-normal text-ink-400">({{ str($match->status)->headline() }})</span>
-                                                </a>
-                                            </li>
-                                        @endforeach
-                                    </ul>
-                                    <a href="{{ route('admin.matches.create', $booking) }}" class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-white">
-                                        <i class="ph ph-plus"></i>
-                                        Add another match
-                                    </a>
-                                @else
-                                    <a href="{{ route('admin.matches.create', $booking) }}" class="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-ink-950 px-4 py-2 text-sm font-semibold text-white hover:bg-ink-800 dark:bg-accent-500 dark:text-ink-950 dark:hover:bg-accent-400">
-                                        <i class="ph ph-plus"></i>
-                                        Add match
-                                    </a>
-                                @endif
-                            </div>
-                        @endif
                     @endif
 
                     <div class="flex flex-wrap items-center gap-x-6 gap-y-2 lg:col-span-2">

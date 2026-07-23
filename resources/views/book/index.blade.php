@@ -1,4 +1,4 @@
-<x-layouts.app :title="'Book a court — Kitchen Line'">
+<x-layouts.app :title="'Book a court — Kitchen Line'" :hide-footer="true">
 
     <section class="mx-auto max-w-5xl px-4 py-14 sm:px-6 lg:px-8">
         <h1 class="font-display text-3xl font-semibold tracking-tight text-ink-950 md:text-4xl dark:text-white">

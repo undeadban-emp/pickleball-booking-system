@@ -49,6 +49,31 @@ class SlotGenerator
         }
     }
 
+    /**
+     * Delete still-open (available, unbooked) slots whose start time no longer
+     * falls within the current open->close window - e.g. after operating hours
+     * are narrowed, or the slot length changes so old start times no longer
+     * align. Booked/pending slots are never touched; they're historical.
+     */
+    public static function pruneOutOfWindow(OperatingHours $hours): void
+    {
+        $openMinutes = static::toMinutes($hours->open_time);
+        $closeMinutes = static::toMinutes($hours->close_time);
+
+        if ($closeMinutes <= $openMinutes) {
+            $closeMinutes += 1440;
+        }
+
+        $validTimes = [];
+        for ($minutes = $openMinutes; $minutes < $closeMinutes; $minutes += $hours->slot_length_minutes) {
+            $validTimes[] = static::toTimeString($minutes);
+        }
+
+        CourtSlot::where('status', 'available')
+            ->whereNotIn('start_time', $validTimes)
+            ->delete();
+    }
+
     protected static function toMinutes(string $time): int
     {
         [$h, $m] = explode(':', $time);

@@ -19,15 +19,24 @@ class OperatingHours extends Model
         'brand_text',
         'booking_widget_style',
         'period_morning_start',
+        'period_morning_end',
         'period_afternoon_start',
+        'period_afternoon_end',
         'period_evening_start',
-        'period_late_evening_start',
+        'period_evening_end',
+        'payment_hold_minutes',
+        'map_location',
+        'map_lat',
+        'map_lng',
+        'map_style',
     ];
 
     protected function casts(): array
     {
         return [
             'show_brand_text' => 'boolean',
+            'map_lat' => 'decimal:7',
+            'map_lng' => 'decimal:7',
         ];
     }
 
@@ -59,61 +68,29 @@ class OperatingHours extends Model
             'morning' => substr($this->period_morning_start, 0, 5),
             'afternoon' => substr($this->period_afternoon_start, 0, 5),
             'evening' => substr($this->period_evening_start, 0, 5),
-            'late' => substr($this->period_late_evening_start, 0, 5),
         ];
     }
 
     /**
-     * Human-friendly "6am to 12 noon" style ranges for each period, in display order,
-     * clipped to the venue's actual open ("Morning starts") to close ("Closes at")
-     * window. A period entirely outside that window (e.g. "Late evening" when the
-     * venue doesn't stay open past midnight) is flagged with has_slots = false rather
-     * than shown as a misleading time range.
+     * Human-friendly "6am to 12 noon" style ranges for each period, using the
+     * admin-configured start AND end for that period directly — not derived
+     * from the next period's start, so what the admin sets is exactly what's
+     * shown (periods are independent and may have gaps or overlap).
      */
     public function periodRanges(): array
     {
         $bounds = [
-            'Morning' => $this->period_morning_start,
-            'Afternoon' => $this->period_afternoon_start,
-            'Evening' => $this->period_evening_start,
-            'Late evening' => $this->period_late_evening_start,
+            'Morning' => [$this->period_morning_start, $this->period_morning_end],
+            'Afternoon' => [$this->period_afternoon_start, $this->period_afternoon_end],
+            'Evening' => [$this->period_evening_start, $this->period_evening_end],
         ];
 
-        $openMinutes = $this->toMinutes($this->open_time);
-        $closeMinutes = $this->toMinutes($this->close_time);
-        if ($closeMinutes <= $openMinutes) {
-            $closeMinutes += 1440;
-        }
-
-        // Place each period on the continuous open->close timeline. Anything that
-        // starts before "open" clock-time belongs to the following day's cycle.
-        $placed = [];
-        foreach ($bounds as $label => $start) {
-            $startMinutes = $this->toMinutes($start);
-            if ($startMinutes < $openMinutes) {
-                $startMinutes += 1440;
-            }
-            $placed[] = ['label' => $label, 'start' => $startMinutes];
-        }
-        usort($placed, fn ($a, $b) => $a['start'] <=> $b['start']);
-
-        $ranges = [];
-        foreach ($placed as $i => $period) {
-            $end = $i < count($placed) - 1 ? $placed[$i + 1]['start'] : $openMinutes + 1440;
-
-            $cappedStart = min($period['start'], $closeMinutes);
-            $cappedEnd = min($end, $closeMinutes);
-
-            $ranges[$period['label']] = [
-                'label' => $period['label'],
-                'from' => $this->friendlyTime($cappedStart),
-                'to' => $this->friendlyTime($cappedEnd),
-                'has_slots' => $cappedEnd > $cappedStart,
-            ];
-        }
-
-        // Return in the fixed display order regardless of computed chronological order.
-        return array_values(array_replace(array_flip(array_keys($bounds)), $ranges));
+        return collect($bounds)->map(fn ($range, $label) => [
+            'label' => $label,
+            'from' => $this->friendlyTime($this->toMinutes($range[0])),
+            'to' => $this->friendlyTime($this->toMinutes($range[1])),
+            'has_slots' => true,
+        ])->values()->all();
     }
 
     protected function toMinutes(string $time): int

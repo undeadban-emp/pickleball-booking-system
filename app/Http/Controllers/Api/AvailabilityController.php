@@ -5,10 +5,14 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Court;
 use App\Models\CourtSlot;
+use App\Models\OperatingHours;
+use App\Services\BookingService;
 use Illuminate\Http\Request;
 
 class AvailabilityController extends Controller
 {
+    public function __construct(protected BookingService $bookings) {}
+
     /**
      * Grid of every active court's slots for a given date, with a display
      * status suitable for a booked/available/pending color-coded view.
@@ -20,6 +24,13 @@ class AvailabilityController extends Controller
         ]);
 
         $date = $request->string('date')->toString();
+
+        // Release any slot held by an unpaid booking that's timed out, right
+        // as this date is being viewed - so it shows available immediately
+        // instead of waiting on the once-a-minute scheduled sweep.
+        if ($holdMinutes = OperatingHours::current()->payment_hold_minutes) {
+            $this->bookings->expireStalePending($holdMinutes, $date);
+        }
 
         $courts = Court::query()
             ->where('is_active', true)
@@ -52,7 +63,9 @@ class AvailabilityController extends Controller
             ];
         });
 
-        return response()->json(['date' => $date, 'courts' => $data]);
+        return response()
+            ->json(['date' => $date, 'courts' => $data])
+            ->header('Cache-Control', 'no-store');
     }
 
     protected function displayStatus(CourtSlot $slot): string

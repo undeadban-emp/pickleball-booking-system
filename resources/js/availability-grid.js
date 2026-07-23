@@ -1,3 +1,5 @@
+import { startPolling } from './poll';
+
 export default function availabilityGrid({ availabilityUrl, isAuthenticated, periodBoundaries }) {
     const pad = (n) => String(n).padStart(2, '0');
     const toDateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -10,12 +12,11 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
     today.setHours(0, 0, 0, 0);
     const todayStr = toDateStr(today);
 
-    const boundaries = periodBoundaries || { morning: '07:00', afternoon: '12:00', evening: '17:00', late: '00:00' };
+    const boundaries = periodBoundaries || { morning: '07:00', afternoon: '12:00', evening: '17:00' };
     const periodMeta = {
         morning: { label: 'Morning', icon: 'ph-sun' },
         afternoon: { label: 'Afternoon', icon: 'ph-cloud-sun' },
         evening: { label: 'Evening', icon: 'ph-moon' },
-        late: { label: 'Late evening', icon: 'ph-moon-stars' },
     };
     // Sort period keys by their start time, ascending. Any time before the
     // earliest boundary wraps around to belong to the LAST period in this
@@ -48,6 +49,10 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
             };
         }),
         windowStart: 0,
+        // 3 date cards on phone/tablet, 7 on larger screens - kept in sync
+        // with the `sm` breakpoint (640px) so the grid-cols class in the
+        // template always matches how many items are actually sliced here.
+        windowSize: window.matchMedia('(min-width: 640px)').matches ? 7 : 3,
         selectedDateStr: todayStr,
         showCalendar: false,
         calendarCursor: new Date(today.getFullYear(), today.getMonth(), 1),
@@ -56,6 +61,7 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
         periods: [],
         loading: false,
         error: null,
+        warning: null,
 
         selectedCourtId: null,
         rangeStart: null,
@@ -65,6 +71,19 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
 
         init() {
             this.fetchAvailability();
+
+            // Background poll so a slot someone else just booked updates here
+            // live - including kicking out the current selection with a
+            // warning if it was picked out from under this visitor. Pauses
+            // while the tab is hidden so a backgrounded tab doesn't keep
+            // hitting the server for no one to see.
+            startPolling(() => this.refreshAvailability(), 7000);
+
+            const mq = window.matchMedia('(min-width: 640px)');
+            mq.addEventListener('change', (e) => {
+                this.windowSize = e.matches ? 7 : 3;
+                this.windowStart = Math.max(0, Math.min(this.windowStart, this.dateStrip.length - this.windowSize));
+            });
         },
 
         get selectedDateLabel() {
@@ -83,15 +102,15 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
         },
 
         get visibleDates() {
-            return this.dateStrip.slice(this.windowStart, this.windowStart + 7);
+            return this.dateStrip.slice(this.windowStart, this.windowStart + this.windowSize);
         },
 
         prevWeek() {
-            this.windowStart = Math.max(0, this.windowStart - 7);
+            this.windowStart = Math.max(0, this.windowStart - this.windowSize);
         },
 
         nextWeek() {
-            this.windowStart = Math.min(this.dateStrip.length - 7, this.windowStart + 7);
+            this.windowStart = Math.min(this.dateStrip.length - this.windowSize, this.windowStart + this.windowSize);
         },
 
         jumpToToday() {
@@ -151,56 +170,69 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
             const index = this.dateStrip.findIndex((d) => d.dateStr === cell.dateStr);
             if (index === -1) return;
 
-            this.windowStart = Math.min(Math.floor(index / 7) * 7, this.dateStrip.length - 7);
+            this.windowStart = Math.min(Math.floor(index / this.windowSize) * this.windowSize, this.dateStrip.length - this.windowSize);
             this.selectDate(cell.dateStr);
             this.showCalendar = false;
         },
 
+        async loadAvailability() {
+            const res = await fetch(`${availabilityUrl}?date=${this.selectedDateStr}`, {
+                headers: { Accept: 'application/json' },
+                cache: 'no-store',
+            });
+            const body = await res.json();
+            let courts = body.courts ?? [];
+
+            // Slots that have already started (or passed entirely) today aren't bookable anymore.
+            if (this.selectedDateStr === todayStr) {
+                const nowHms = new Date().toTimeString().slice(0, 8);
+                courts = courts.map((court) => ({
+                    ...court,
+                    slots: court.slots.filter((s) => s.start_time > nowHms),
+                }));
+            }
+
+            return courts;
+        },
+
+        applyAvailability(courts) {
+            this.courts = courts;
+
+            const timeSet = new Map();
+            this.courts.forEach((court) => {
+                court.slots.forEach((slot) => {
+                    if (!timeSet.has(slot.start_time)) {
+                        timeSet.set(slot.start_time, slot.start_time);
+                    }
+                });
+            });
+            this.times = Array.from(timeSet.keys()).sort();
+
+            const periodMap = new Map();
+            this.times.forEach((time) => {
+                const [h, m] = time.split(':').map(Number);
+                const period = periodForMinutes(h * 60 + m);
+                if (!periodMap.has(period.key)) {
+                    periodMap.set(period.key, { ...period, times: [] });
+                }
+                periodMap.get(period.key).times.push(time);
+            });
+            const periodOrder = ['morning', 'afternoon', 'evening'];
+            this.periods = Array.from(periodMap.values()).sort(
+                (a, b) => periodOrder.indexOf(a.key) - periodOrder.indexOf(b.key)
+            );
+        },
+
+        // Foreground fetch: initial load or date change. Shows the loading
+        // state and surfaces a "no slots" error directly.
         async fetchAvailability() {
             this.loading = true;
             this.error = null;
+            this.warning = null;
 
             try {
-                const res = await fetch(`${availabilityUrl}?date=${this.selectedDateStr}`, {
-                    headers: { Accept: 'application/json' },
-                });
-                const body = await res.json();
-                let courts = body.courts ?? [];
-
-                // Slots that have already started (or passed entirely) today aren't bookable anymore.
-                if (this.selectedDateStr === todayStr) {
-                    const nowHms = new Date().toTimeString().slice(0, 8);
-                    courts = courts.map((court) => ({
-                        ...court,
-                        slots: court.slots.filter((s) => s.start_time > nowHms),
-                    }));
-                }
-
-                this.courts = courts;
-
-                const timeSet = new Map();
-                this.courts.forEach((court) => {
-                    court.slots.forEach((slot) => {
-                        if (!timeSet.has(slot.start_time)) {
-                            timeSet.set(slot.start_time, slot.start_time);
-                        }
-                    });
-                });
-                this.times = Array.from(timeSet.keys()).sort();
-
-                const periodMap = new Map();
-                this.times.forEach((time) => {
-                    const [h, m] = time.split(':').map(Number);
-                    const period = periodForMinutes(h * 60 + m);
-                    if (!periodMap.has(period.key)) {
-                        periodMap.set(period.key, { ...period, times: [] });
-                    }
-                    periodMap.get(period.key).times.push(time);
-                });
-                const periodOrder = ['morning', 'afternoon', 'evening', 'late'];
-                this.periods = Array.from(periodMap.values()).sort(
-                    (a, b) => periodOrder.indexOf(a.key) - periodOrder.indexOf(b.key)
-                );
+                const courts = await this.loadAvailability();
+                this.applyAvailability(courts);
 
                 if (this.courts.every((c) => c.slots.length === 0)) {
                     this.error = 'No open slots on this date.';
@@ -209,6 +241,34 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
                 this.error = 'Could not load availability. Please try again.';
             } finally {
                 this.loading = false;
+            }
+        },
+
+        // Background refresh: silent, no loading spinner. If a slot this
+        // visitor already picked just got taken by someone else, drop the
+        // selection and warn instead of letting them submit a doomed booking.
+        async refreshAvailability() {
+            if (this.loading) return;
+
+            try {
+                const courts = await this.loadAvailability();
+                const previousSelectedIds = this.selectedSlotIds;
+
+                this.applyAvailability(courts);
+
+                if (previousSelectedIds.length) {
+                    const stillSelectable = previousSelectedIds.every((id) => {
+                        const slot = this.selectedCourt?.slots.find((s) => s.id === id);
+                        return slot && slot.status === 'available';
+                    });
+
+                    if (!stillSelectable) {
+                        this.clearSelection();
+                        this.warning = 'One or more of your selected slots were just booked by someone else. Please pick again.';
+                    }
+                }
+            } catch (e) {
+                // Transient network hiccup - don't disrupt the page over it.
             }
         },
 

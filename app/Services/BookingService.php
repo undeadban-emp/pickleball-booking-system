@@ -69,6 +69,37 @@ class BookingService
         });
     }
 
+    /**
+     * Front-desk / walk-in booking: admin books directly on the customer's
+     * behalf and confirms it immediately, skipping the payment-review step
+     * entirely (no GCash reference, no pending_payment stop-over).
+     *
+     * $rebookedFrom links this to an earlier booking it replaces (e.g. rained
+     * out, so the customer's already-paid slot moves to a new date instead of
+     * the money going to waste) - no new payment is taken, and the original
+     * is automatically cancelled so it doesn't keep sitting there as if the
+     * customer is still expected to show up for a slot that's not happening.
+     *
+     * @param  array<int>  $courtSlotIds
+     * @param  array{name: string, phone: string, email?: string|null}|null  $guest
+     */
+    public function createConfirmedBooking(?User $customer, Court $court, array $courtSlotIds, ?array $guest, User $admin, ?Booking $rebookedFrom = null): Booking
+    {
+        $booking = $this->createBooking($customer, $court, $courtSlotIds, $guest);
+
+        if ($rebookedFrom) {
+            $booking->update(['rebooked_from_id' => $rebookedFrom->id]);
+        }
+
+        $booking = $this->approve($booking, $admin, 'Booked by admin, payment bypassed');
+
+        if ($rebookedFrom && in_array($rebookedFrom->status, ['pending_payment', 'confirmed'], true)) {
+            $this->cancel($rebookedFrom, $admin, "Rescheduled — rebooked as {$booking->booking_code}");
+        }
+
+        return $booking;
+    }
+
     public function submitGcashReference(Booking $booking, string $reference, ?string $proofPath = null, ?int $paymentMethodId = null): Booking
     {
         if ($booking->status !== 'pending_payment') {
@@ -85,13 +116,13 @@ class BookingService
         return $booking->fresh();
     }
 
-    public function approve(Booking $booking, User $admin): Booking
+    public function approve(Booking $booking, User $admin, string $note = 'Payment approved'): Booking
     {
         if ($booking->status !== 'pending_payment') {
             throw new InvalidBookingTransitionException($booking->status, 'approved');
         }
 
-        $booking = DB::transaction(function () use ($booking, $admin) {
+        $booking = DB::transaction(function () use ($booking, $admin, $note) {
             $lastSlot = $booking->slots()->orderBy('start_time')->get()->last();
 
             $booking->update([
@@ -104,7 +135,7 @@ class BookingService
                     : null,
             ]);
 
-            $this->logStatus($booking, 'pending_payment', 'confirmed', $admin, 'Payment approved');
+            $this->logStatus($booking, 'pending_payment', 'confirmed', $admin, $note);
 
             return $booking->fresh(['court', 'slots', 'user']);
         });
@@ -159,6 +190,59 @@ class BookingService
 
             return $booking->fresh();
         });
+    }
+
+    /**
+     * Auto-release bookings that have sat unpaid past the admin's configured
+     * payment hold window - frees the slot back to available for everyone
+     * else, same as a manual cancel, just triggered by the clock instead of
+     * a person. Only bookings with no GCash reference yet are eligible - once
+     * a customer has submitted one, it's awaiting admin review, not the
+     * customer's payment, so it must not be auto-cancelled out from under them.
+     *
+     * $onlyDate scopes the sweep to bookings touching one slot_date, for cheap
+     * on-read expiry from a specific date's availability endpoint - the full,
+     * unscoped sweep still runs on a schedule (see bookings:expire-pending) as
+     * the system-wide safety net.
+     */
+    public function expireStalePending(int $holdMinutes, ?string $onlyDate = null): int
+    {
+        $cutoff = now()->subMinutes($holdMinutes);
+
+        $query = Booking::where('status', 'pending_payment')
+            ->whereNull('gcash_reference')
+            ->where('created_at', '<=', $cutoff);
+
+        if ($onlyDate) {
+            $query->whereHas('slots', fn ($q) => $q->whereDate('slot_date', $onlyDate));
+        }
+
+        $stale = $query->get();
+
+        foreach ($stale as $booking) {
+            $this->cancel($booking, null, 'Payment window expired');
+        }
+
+        return $stale->count();
+    }
+
+    /**
+     * Lazy, single-booking version of the same check - lets a page the
+     * customer is actively looking at (their own status poll) reflect the
+     * expiry the instant their countdown hits zero, without waiting for the
+     * next scheduled sweep.
+     */
+    public function expireBookingIfStale(Booking $booking, int $holdMinutes): Booking
+    {
+        if ($booking->status !== 'pending_payment' || $booking->gcash_reference) {
+            return $booking;
+        }
+
+        if ($booking->created_at->copy()->addMinutes($holdMinutes)->isFuture()) {
+            return $booking;
+        }
+
+        return $this->cancel($booking, null, 'Payment window expired');
     }
 
     public function checkIn(Booking $booking, User $staff): Booking

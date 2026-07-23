@@ -1,7 +1,7 @@
 @php
     $statusMeta = match ($booking->status) {
         'pending_payment' => $booking->gcash_reference
-            ? ['label' => 'Awaiting confirmation', 'icon' => 'ph-clock-countdown', 'classes' => 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300']
+            ? ['label' => 'Awaiting confirmation', 'icon' => 'ph-clock-countdown', 'classes' => 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300']
             : ['label' => 'Awaiting payment', 'icon' => 'ph-clock-countdown', 'classes' => 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'],
         'confirmed' => ['label' => 'Confirmed', 'icon' => 'ph-check-circle', 'classes' => 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'],
         'rejected' => ['label' => 'Payment not confirmed', 'icon' => 'ph-x-circle', 'classes' => 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'],
@@ -172,7 +172,7 @@
                     @if ($booking->status === 'pending_payment' && ! $booking->gcash_reference)
                         <div
                             x-data="{
-                                deadline: new Date('{{ $booking->created_at->copy()->addMinutes(30)->toIso8601String() }}').getTime(),
+                                deadline: new Date('{{ $booking->created_at->copy()->addMinutes($paymentHoldMinutes)->toIso8601String() }}').getTime(),
                                 remaining: '',
                                 tick() {
                                     const diff = Math.max(0, this.deadline - Date.now());
@@ -391,15 +391,74 @@
                         @endif
                     </div>
                 @elseif ($booking->status === 'confirmed')
-                    <div class="mt-4 rounded-2xl border border-ink-100 bg-white p-6 text-center dark:border-ink-800 dark:bg-ink-900">
+                    @php
+                        $__firstSlot = $booking->slots->sortBy('start_time')->first();
+                        $__lastSlot = $booking->slots->sortBy('start_time')->last();
+                        $__dateLine = $__firstSlot
+                            ? \Illuminate\Support\Carbon::parse($__firstSlot->slot_date)->format('M j, Y')
+                            : '';
+                        $__timeLine = $__firstSlot
+                            ? \Illuminate\Support\Carbon::parse($__firstSlot->start_time)->format('g:i A').' to '.\Illuminate\Support\Carbon::parse($__lastSlot->end_time)->format('g:i A')
+                            : '';
+                    @endphp
+                    <div
+                        class="mt-4 rounded-2xl border border-ink-100 bg-white p-6 text-center dark:border-ink-800 dark:bg-ink-900"
+                        x-data="{
+                            downloadQr() {
+                                const svg = this.$refs.qrSvg.querySelector('svg');
+                                const svgData = new XMLSerializer().serializeToString(svg);
+                                const svgUrl = URL.createObjectURL(new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' }));
+                                const img = new Image();
+                                img.onload = () => {
+                                    const qrSize = 220;
+                                    const pad = 28;
+                                    const canvas = document.createElement('canvas');
+                                    canvas.width = qrSize + pad * 2;
+                                    canvas.height = qrSize + pad * 2 + 130;
+                                    const ctx = canvas.getContext('2d');
+                                    ctx.fillStyle = '#ffffff';
+                                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                                    ctx.drawImage(img, pad, pad, qrSize, qrSize);
+                                    URL.revokeObjectURL(svgUrl);
+
+                                    ctx.textAlign = 'center';
+                                    ctx.fillStyle = '#0f172a';
+                                    ctx.font = 'bold 17px sans-serif';
+                                    ctx.fillText(@js($booking->booking_code), canvas.width / 2, qrSize + pad + 28);
+
+                                    ctx.font = '13px sans-serif';
+                                    ctx.fillStyle = '#475569';
+                                    ctx.fillText(@js($booking->court->name), canvas.width / 2, qrSize + pad + 50);
+                                    ctx.fillText(@js($__dateLine), canvas.width / 2, qrSize + pad + 70);
+                                    ctx.fillText(@js($__timeLine), canvas.width / 2, qrSize + pad + 90);
+                                    ctx.fillText(@js($booking->contactName()), canvas.width / 2, qrSize + pad + 110);
+
+                                    const a = document.createElement('a');
+                                    a.href = canvas.toDataURL('image/png');
+                                    a.download = @js('booking-'.$booking->booking_code.'.png');
+                                    a.click();
+                                };
+                                img.src = svgUrl;
+                            }
+                        }"
+                    >
                         <p class="text-sm font-semibold text-ink-950 dark:text-white">Show this code at the gate</p>
-                        <div class="mx-auto mt-4 w-fit rounded-2xl bg-white p-3">
+                        <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">Save this QR code and show it to the receptionist when you arrive — no need for a data connection.</p>
+                        <div class="mx-auto mt-4 w-fit rounded-2xl bg-white p-3" x-ref="qrSvg">
                             {{-- {!! QrCode::format('svg')->size(220)->generate(url('/checkin/'.$booking->checkin_token)) !!} --}}
                             {!! QrCode::format('svg')->size(220)->generate($booking->checkin_token) !!}
                         </div>
                         <p class="mt-4 text-xs text-ink-500 dark:text-ink-400">
                             Valid until {{ $booking->checkin_token_expires_at?->format('g:i A, M j') }}
                         </p>
+                        <button
+                            type="button"
+                            @click="downloadQr()"
+                            class="mt-4 inline-flex items-center gap-1.5 rounded-full bg-ink-950 px-5 py-2.5 text-sm font-semibold text-white transition-transform active:scale-[0.98] hover:bg-ink-800 dark:bg-accent-500 dark:text-ink-950 dark:hover:bg-accent-400"
+                        >
+                            <i class="ph ph-download-simple text-base"></i>
+                            Save QR code
+                        </button>
                     </div>
                 @elseif ($booking->status === 'rejected')
                     <div class="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300">
@@ -407,6 +466,15 @@
                         @if ($booking->rejection_reason)
                             <p class="mt-1">{{ $booking->rejection_reason }}</p>
                         @endif
+                    </div>
+                @elseif ($booking->status === 'cancelled' && $booking->cancellation_reason === 'Payment window expired')
+                    <div class="mt-4 rounded-2xl border border-ink-100 bg-white p-5 text-sm text-ink-600 dark:border-ink-800 dark:bg-ink-900 dark:text-ink-400">
+                        <p class="font-semibold text-ink-800 dark:text-ink-200">Your payment window ran out.</p>
+                        <p class="mt-1">No reference was received in time, so this slot has been released and is open again for anyone to book — including you.</p>
+                        <a href="{{ auth()->check() ? route('book.show', $booking->court) : url('/') }}" class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-accent-700 hover:text-accent-800 dark:text-accent-400">
+                            Book this court again
+                            <i class="ph ph-arrow-right text-base"></i>
+                        </a>
                     </div>
                 @elseif ($booking->status === 'cancelled')
                     <div class="mt-4 rounded-2xl border border-ink-100 bg-white p-5 text-sm text-ink-600 dark:border-ink-800 dark:bg-ink-900 dark:text-ink-400">

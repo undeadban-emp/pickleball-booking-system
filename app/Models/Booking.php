@@ -16,6 +16,7 @@ class Booking extends Model
         'guest_phone',
         'guest_email',
         'court_id',
+        'rebooked_from_id',
         'status',
         'total_price',
         'payment_method_id',
@@ -54,6 +55,23 @@ class Booking extends Model
     public function court(): BelongsTo
     {
         return $this->belongsTo(Court::class);
+    }
+
+    /**
+     * The earlier booking this one replaces (e.g. rained out and rescheduled)
+     * - no new money changes hands, it's a continuation of the same payment.
+     */
+    public function rebookedFrom(): BelongsTo
+    {
+        return $this->belongsTo(Booking::class, 'rebooked_from_id');
+    }
+
+    /**
+     * The booking this one was rescheduled into, if any.
+     */
+    public function rebookedTo(): HasMany
+    {
+        return $this->hasMany(Booking::class, 'rebooked_from_id');
     }
 
     public function paymentMethod(): BelongsTo
@@ -96,6 +114,16 @@ class Booking extends Model
         return $this->user->name ?? $this->guest_name ?? 'Guest';
     }
 
+    public function contactPhone(): ?string
+    {
+        return $this->user->phone ?? $this->guest_phone;
+    }
+
+    public function contactEmail(): ?string
+    {
+        return $this->user->email ?? $this->guest_email;
+    }
+
     public function isGuestBooking(): bool
     {
         return $this->user_id === null;
@@ -104,5 +132,40 @@ class Booking extends Model
     public function paymentProofUrl(): ?string
     {
         return $this->payment_proof_path ? asset('storage/'.$this->payment_proof_path) : null;
+    }
+
+    /**
+     * True once the customer has sent a GCash reference for a pending_payment
+     * booking - it's now sitting in the admin review queue, not actually
+     * waiting on the customer to pay anymore.
+     */
+    public function hasSubmittedPayment(): bool
+    {
+        return filled($this->gcash_reference);
+    }
+
+    /**
+     * Who/what actually cancelled this booking - the `cancellation_reason`
+     * column alone can't tell an admin apart from a self-service customer
+     * cancel (both can leave it null), so this also looks at the matching
+     * status-log entry's `changed_by` to attribute it correctly. Expects
+     * `statusLogs.changedBy` to already be eager-loaded.
+     */
+    public function cancellationSummary(): ?string
+    {
+        if ($this->status !== 'cancelled') {
+            return null;
+        }
+
+        if ($this->cancellation_reason === 'Payment window expired') {
+            return 'Auto-cancelled — payment window expired';
+        }
+
+        $log = $this->statusLogs->sortByDesc('created_at')->firstWhere('to_status', 'cancelled');
+
+        $who = $log?->changedBy ? "by {$log->changedBy->name}" : 'by the customer';
+        $reason = $this->cancellation_reason ? " — {$this->cancellation_reason}" : '';
+
+        return "Cancelled {$who}{$reason}";
     }
 }

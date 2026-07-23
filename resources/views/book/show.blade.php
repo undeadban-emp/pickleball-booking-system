@@ -1,8 +1,9 @@
-<x-layouts.app :title="$court->name.' — book a slot'">
+<x-layouts.app :title="$court->name.' — book a slot'" :hide-footer="true">
 
     <section
         class="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8"
-        x-data="bookingCalendar({ courtId: {{ $court->id }}, slotsUrl: '{{ url('/api/courts/'.$court->id.'/slots') }}' })"
+        :class="selectedSlots.length > 0 ? 'pb-24' : ''"
+        x-data="bookingCalendar({ courtId: {{ $court->id }}, slotsUrl: '{{ url('/api/courts/'.$court->id.'/slots') }}', periodBoundaries: @js($periodBoundaries) })"
     >
         <a href="{{ route('book.index') }}" class="inline-flex items-center gap-1.5 text-sm font-medium text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-white">
             <i class="ph ph-arrow-left"></i>
@@ -21,11 +22,11 @@
             <div class="lg:col-span-3">
                 <div class="rounded-2xl border border-ink-100 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
                     <div class="flex items-center justify-between">
-                        <button type="button" @click="prevMonth()" class="rounded-full p-2 text-ink-500 hover:bg-ink-100 dark:text-ink-400 dark:hover:bg-ink-800" aria-label="Previous month">
+                        <button type="button" @click="prevMonth()" class="cursor-pointer rounded-full p-2 text-ink-500 hover:bg-ink-100 dark:text-ink-400 dark:hover:bg-ink-800" aria-label="Previous month">
                             <i class="ph ph-caret-left text-lg"></i>
                         </button>
                         <p class="font-display text-sm font-semibold text-ink-950 dark:text-white" x-text="monthLabel"></p>
-                        <button type="button" @click="nextMonth()" class="rounded-full p-2 text-ink-500 hover:bg-ink-100 dark:text-ink-400 dark:hover:bg-ink-800" aria-label="Next month">
+                        <button type="button" @click="nextMonth()" class="cursor-pointer rounded-full p-2 text-ink-500 hover:bg-ink-100 dark:text-ink-400 dark:hover:bg-ink-800" aria-label="Next month">
                             <i class="ph ph-caret-right text-lg"></i>
                         </button>
                     </div>
@@ -41,7 +42,7 @@
                                 x-show="cell"
                                 :disabled="cell && cell.isPast"
                                 @click="cell && selectDate(cell.dateStr, cell.isPast)"
-                                class="aspect-square rounded-xl text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:text-ink-300 dark:disabled:text-ink-700"
+                                class="aspect-square cursor-pointer rounded-xl text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:text-ink-300 dark:disabled:text-ink-700"
                                 :class="cell && selectedDateStr === cell.dateStr
                                     ? 'bg-accent-500 text-ink-950'
                                     : (cell && cell.isToday ? 'border border-accent-400 text-ink-900 dark:text-white' : 'text-ink-700 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800')"
@@ -67,77 +68,45 @@
                         <p class="text-sm text-rose-600 dark:text-rose-400" x-text="error"></p>
                     </template>
 
+                    <template x-if="warning">
+                        <p class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300" x-text="warning"></p>
+                    </template>
+
                     <template x-if="selectedDateStr && !loading && slots.length > 0">
                         <div>
-                            <p class="text-sm font-medium text-ink-800 dark:text-ink-200">
-                                Tap a start time, then an end time to select a block.
-                            </p>
-                            <div class="mt-3 flex flex-wrap gap-2">
-                                <template x-for="(slot, index) in slots" :key="slot.id">
-                                    <button
-                                        type="button"
-                                        @click="pickSlot(index)"
-                                        class="rounded-full border px-3 py-1.5 text-sm font-medium transition-colors"
-                                        :class="isSelected(index)
-                                            ? 'border-accent-500 bg-accent-500 text-ink-950'
-                                            : 'border-ink-200 text-ink-700 hover:border-accent-400 dark:border-ink-700 dark:text-ink-300'"
-                                        x-text="formatTime(slot.start_time)"
-                                    ></button>
+                            <div class="flex items-center justify-between gap-2">
+                                <p class="text-sm font-medium text-ink-800 dark:text-ink-200">
+                                    Tap a start time, then an end time to select a block.
+                                </p>
+                                <span class="flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-ink-400 dark:text-ink-500">
+                                    <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500"></span>
+                                    Live
+                                </span>
+                            </div>
+                            <div class="mt-3 space-y-4">
+                                <template x-for="group in groupedSlots" :key="group.label">
+                                    <div>
+                                        <p class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide" :class="group.color">
+                                            <i class="ph text-sm" :class="group.icon"></i>
+                                            <span x-text="group.label"></span>
+                                        </p>
+                                        <div class="mt-2 flex flex-wrap gap-2">
+                                            <template x-for="item in group.items" :key="item.slot.id">
+                                                <button
+                                                    type="button"
+                                                    @click="pickSlot(item.index)"
+                                                    class="cursor-pointer rounded-full border px-3 py-1.5 text-sm font-medium transition-colors"
+                                                    :class="isSelected(item.index)
+                                                        ? 'border-accent-500 bg-accent-500 text-ink-950'
+                                                        : 'border-ink-200 text-ink-700 hover:border-accent-400 dark:border-ink-700 dark:text-ink-300'"
+                                                    x-text="slotLabel(item.slot)"
+                                                ></button>
+                                            </template>
+                                        </div>
+                                    </div>
                                 </template>
                             </div>
 
-                            <template x-if="selectedSlots.length > 0">
-                                <div class="mt-5 border-t border-ink-100 pt-4 dark:border-ink-800">
-                                    <p class="text-sm text-ink-600 dark:text-ink-400">
-                                        <span x-text="selectedSlots.length"></span> hour<span x-show="selectedSlots.length > 1">s</span>,
-                                        <span x-text="formatTime(selectedSlots[0].start_time)"></span> to
-                                        <span x-text="formatTime(selectedSlots[selectedSlots.length - 1].end_time)"></span>
-                                    </p>
-                                    <p class="mt-1 font-display text-2xl font-semibold text-ink-950 dark:text-white">
-                                        ₱<span x-text="totalPrice.toFixed(2)"></span>
-                                    </p>
-
-                                    <form method="POST" action="{{ route('book.store', $court) }}" class="mt-4 space-y-3">
-                                        @csrf
-                                        <template x-for="id in selectedSlotIds" :key="id">
-                                            <input type="hidden" name="court_slot_ids[]" :value="id">
-                                        </template>
-
-                                        @guest
-                                            <div class="flex flex-col gap-2">
-                                                <label for="guest_name" class="text-xs font-medium text-ink-700 dark:text-ink-300">Name</label>
-                                                <input id="guest_name" name="guest_name" type="text" required value="{{ old('guest_name') }}"
-                                                    class="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm text-ink-950 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-white">
-                                            </div>
-                                            <div class="flex flex-col gap-2">
-                                                <label for="guest_phone" class="text-xs font-medium text-ink-700 dark:text-ink-300">Phone number</label>
-                                                <input id="guest_phone" name="guest_phone" type="tel" required value="{{ old('guest_phone') }}"
-                                                    class="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm text-ink-950 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-white">
-                                            </div>
-                                            <div class="flex flex-col gap-2">
-                                                <label for="guest_email" class="text-xs font-medium text-ink-700 dark:text-ink-300">Email</label>
-                                                <input id="guest_email" name="guest_email" type="email" required value="{{ old('guest_email') }}" placeholder="For your confirmation"
-                                                    class="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm text-ink-950 placeholder:text-ink-400 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-white">
-                                            </div>
-                                        @endguest
-
-                                        <button
-                                            type="submit"
-                                            class="w-full rounded-full bg-accent-500 px-6 py-3 text-sm font-semibold text-ink-950 transition-transform active:scale-[0.98] hover:bg-accent-400"
-                                        >
-                                            Continue to payment
-                                        </button>
-                                    </form>
-                                    @guest
-                                        <p class="mt-2 text-center text-xs text-ink-400">
-                                            No account needed. <a href="{{ route('login') }}" class="underline hover:text-ink-600 dark:hover:text-ink-200">Log in</a> to save your booking history.
-                                        </p>
-                                    @endguest
-                                    <button type="button" @click="clearSelection()" class="mt-2 w-full text-center text-xs font-medium text-ink-400 hover:text-ink-600 dark:hover:text-ink-200">
-                                        Clear selection
-                                    </button>
-                                </div>
-                            </template>
                         </div>
                     </template>
                 </div>
@@ -147,6 +116,166 @@
                 @enderror
             </div>
         </div>
+
+        {{-- Selection summary: floating cart-style card pinned above the viewport bottom --}}
+        <template x-if="selectedSlots.length > 0">
+            <div class="fixed inset-x-0 bottom-0 z-40 p-4">
+                <div class="mx-auto max-w-md rounded-3xl bg-accent-500 p-4 shadow-[0_12px_40px_rgba(0,0,0,0.45)] ring-1 ring-black/10">
+                    <div class="flex items-center justify-between gap-3">
+                        <button type="button" @click="showQuickDetails = !showQuickDetails" class="flex items-center gap-1.5 text-sm font-medium text-white">
+                            <i class="ph ph-shopping-cart-simple text-base"></i>
+                            <span x-text="selectedSlots.length"></span> slot<span x-show="selectedSlots.length > 1">s</span>
+                            <i class="ph ph-caret-down text-xs text-white/70 transition-transform" :class="showQuickDetails && 'rotate-180'"></i>
+                        </button>
+
+                        <div class="flex items-center gap-3">
+                            <span class="font-display text-lg font-semibold text-white">₱<span x-text="totalPrice.toFixed(2)"></span></span>
+                            <button
+                                type="button"
+                                @click="showReserveSheet = true"
+                                class="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-ink-950 px-4 py-2 text-sm font-semibold text-white transition-transform active:scale-[0.98] hover:bg-ink-800"
+                            >
+                                Book Now
+                                <i class="ph ph-arrow-right text-base"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div x-show="showQuickDetails" x-cloak x-transition class="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-black/10 px-4 py-3">
+                        <p class="min-w-0 truncate text-sm text-white">
+                            <span class="font-semibold">{{ $court->name }}</span>
+                            <span class="text-white/70">&middot;</span>
+                            <span x-text="selectedDateLabel"></span>
+                            <span class="text-white/70">&middot;</span>
+                            <span x-text="formatTime(selectedSlots[0].start_time) + '–' + formatTime(selectedSlots[selectedSlots.length - 1].end_time)"></span>
+                        </p>
+                        <button type="button" @click="clearSelection()" class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/10 hover:text-white" aria-label="Clear selection">
+                            <i class="ph ph-x text-sm"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        {{-- "Complete Your Booking" modal --}}
+        <template x-if="selectedSlots.length > 0">
+            <div
+                x-show="showReserveSheet"
+                x-cloak
+                x-transition.opacity
+                @keydown.escape.window="showReserveSheet = false"
+                class="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/70 p-4"
+            >
+                <div
+                    @click.outside="showReserveSheet = false"
+                    x-transition
+                    class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl bg-white shadow-2xl dark:bg-ink-900"
+                >
+                    <div class="flex items-start justify-between rounded-t-3xl bg-ink-950 p-5">
+                        <div>
+                            <p class="font-display text-lg font-semibold text-white">Complete Your Booking</p>
+                            <p class="text-sm text-ink-300">{{ $court->name }}</p>
+                        </div>
+                        <button type="button" @click="showReserveSheet = false" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20" aria-label="Close">
+                            <i class="ph ph-x text-lg"></i>
+                        </button>
+                    </div>
+
+                    <form method="POST" action="{{ route('book.store', $court) }}" class="p-5">
+                        @csrf
+                        <template x-for="id in selectedSlotIds" :key="id">
+                            <input type="hidden" name="court_slot_ids[]" :value="id">
+                        </template>
+
+                        <div class="overflow-hidden rounded-2xl border border-ink-100 dark:border-ink-800">
+                            <div class="flex items-start justify-between gap-3 bg-accent-50 px-4 py-3 dark:bg-accent-950">
+                                <div>
+                                    <p class="text-sm font-semibold text-ink-950 dark:text-white">
+                                        {{ $court->name }} &middot; <span x-text="selectedSlots.length"></span>h
+                                    </p>
+                                    <p class="text-xs text-ink-500 dark:text-ink-400">
+                                        <span x-text="selectedDateLabel"></span> &middot;
+                                        <span x-text="formatTime(selectedSlots[0].start_time)"></span> to
+                                        <span x-text="formatTime(selectedSlots[selectedSlots.length - 1].end_time)"></span>
+                                    </p>
+                                </div>
+                                <p class="shrink-0 font-mono text-sm font-semibold text-ink-950 dark:text-white">₱<span x-text="totalPrice.toFixed(2)"></span></p>
+                            </div>
+                            <div class="flex items-center justify-between border-t border-ink-100 bg-white px-4 py-3 dark:border-ink-800 dark:bg-ink-900">
+                                <p class="text-xs font-semibold tracking-wide text-accent-700 uppercase dark:text-accent-400">Total</p>
+                                <p class="font-display text-lg font-semibold text-ink-950 dark:text-white">₱<span x-text="totalPrice.toFixed(2)"></span></p>
+                            </div>
+                        </div>
+
+                        @guest
+                            <div class="mt-5">
+                                <p class="text-sm font-semibold text-ink-950 dark:text-white">Your details</p>
+
+                                <div class="mt-3 flex flex-col gap-3">
+                                    <div class="flex flex-col gap-1.5">
+                                        <label for="guest_name" class="text-xs font-medium text-ink-500 dark:text-ink-400">Full name</label>
+                                        <input
+                                            id="guest_name"
+                                            name="guest_name"
+                                            type="text"
+                                            required
+                                            placeholder="Juan Dela Cruz"
+                                            value="{{ old('guest_name') }}"
+                                            class="w-full rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm text-ink-950 placeholder:text-ink-400 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-white"
+                                        >
+                                    </div>
+
+                                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                        <div class="flex flex-col gap-1.5">
+                                            <label for="guest_phone" class="text-xs font-medium text-ink-500 dark:text-ink-400">Phone</label>
+                                            <input
+                                                id="guest_phone"
+                                                name="guest_phone"
+                                                type="tel"
+                                                required
+                                                placeholder="09XX-XXX-XXXX"
+                                                value="{{ old('guest_phone') }}"
+                                                class="w-full rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm text-ink-950 placeholder:text-ink-400 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-white"
+                                            >
+                                        </div>
+                                        <div class="flex flex-col gap-1.5">
+                                            <label for="guest_email" class="text-xs font-medium text-ink-500 dark:text-ink-400">Email</label>
+                                            <input
+                                                id="guest_email"
+                                                name="guest_email"
+                                                type="email"
+                                                required
+                                                placeholder="you@email.com"
+                                                value="{{ old('guest_email') }}"
+                                                class="w-full rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm text-ink-950 placeholder:text-ink-400 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-white"
+                                            >
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        @endguest
+
+                        <button
+                            type="submit"
+                            class="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-accent-500 px-6 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.98] hover:bg-accent-400"
+                        >
+                            <i class="ph ph-calendar-check text-base"></i>
+                            Continue to payment
+                        </button>
+
+                        <button type="button" @click="clearSelection()" class="mt-2 w-full text-center text-xs font-medium text-ink-500 hover:text-ink-700 dark:text-ink-400">
+                            Clear selection
+                        </button>
+
+                        @guest
+                            <p class="mt-3 text-center text-xs text-ink-400">
+                                No account needed. <a href="{{ route('login') }}" class="underline hover:text-ink-600 dark:hover:text-ink-200">Log in</a> to save your booking history.
+                            </p>
+                        @endguest
+                    </form>
+                </div>
+            </div>
+        </template>
     </section>
 
 </x-layouts.app>

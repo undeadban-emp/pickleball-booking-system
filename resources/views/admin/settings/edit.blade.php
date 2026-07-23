@@ -2,7 +2,7 @@
 
     <h1 class="font-display text-2xl font-semibold tracking-tight text-ink-950 dark:text-white">Settings</h1>
     <p class="mt-1 text-sm text-ink-500 dark:text-ink-400">
-        Time-of-day groups control which hours are open for booking. Manage GCash, bank, and other payment options on the
+        Manage GCash, bank, and other payment options on the
         <a href="{{ route('admin.payment-methods.index') }}" class="font-medium text-accent-700 underline dark:text-accent-400">Payment methods</a> page.
     </p>
 
@@ -120,77 +120,24 @@
         </div>
 
         <div class="col-span-full rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
-            <p class="text-sm font-semibold text-ink-950 dark:text-white">Time-of-day groups</p>
-            <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">
-                This is what controls booking hours. Morning's start time is also when the venue opens. "Closes at" is when Late evening ends, and can be past midnight (e.g. 2am) if you stay open overnight.
-            </p>
-
-            <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Morning starts</label>
-                    <input type="time" name="period_morning_start" value="{{ substr($settings->period_morning_start, 0, 5) }}" required
-                        class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
-                    @error('period_morning_start')
-                        <p class="text-xs text-rose-600 dark:text-rose-400">{{ $message }}</p>
-                    @enderror
-                </div>
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Afternoon starts</label>
-                    <input type="time" name="period_afternoon_start" value="{{ substr($settings->period_afternoon_start, 0, 5) }}" required
-                        class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
-                    @error('period_afternoon_start')
-                        <p class="text-xs text-rose-600 dark:text-rose-400">{{ $message }}</p>
-                    @enderror
-                </div>
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Evening starts</label>
-                    <input type="time" name="period_evening_start" value="{{ substr($settings->period_evening_start, 0, 5) }}" required
-                        class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
-                    @error('period_evening_start')
-                        <p class="text-xs text-rose-600 dark:text-rose-400">{{ $message }}</p>
-                    @enderror
-                </div>
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Late evening starts</label>
-                    <input type="time" name="period_late_evening_start" value="{{ substr($settings->period_late_evening_start, 0, 5) }}" required
-                        class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
-                    @error('period_late_evening_start')
-                        <p class="text-xs text-rose-600 dark:text-rose-400">{{ $message }}</p>
-                    @enderror
-                </div>
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Closes at</label>
-                    <input type="time" name="close_time" value="{{ substr($settings->close_time, 0, 5) }}" required
-                        class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
-                    @error('close_time')
-                        <p class="text-xs text-rose-600 dark:text-rose-400">{{ $message }}</p>
-                    @enderror
-                </div>
-            </div>
+            <p class="text-sm font-semibold text-ink-950 dark:text-white">Payment hold window</p>
+            <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">How long an unpaid ("Pending payment") booking holds its slot before it's automatically released back to available. Runs every minute in the background.</p>
 
             <div class="mt-4 flex flex-col gap-1.5 sm:w-48">
-                <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Slot length</label>
-                <select name="slot_length_minutes" class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
-                    @foreach ([30 => '30 minutes', 60 => '1 hour', 90 => '1 hour 30 minutes', 120 => '2 hours'] as $value => $label)
-                        <option value="{{ $value }}" @selected($settings->slot_length_minutes == $value)>{{ $label }}</option>
-                    @endforeach
-                </select>
+                <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Minutes</label>
+                <input
+                    name="payment_hold_minutes"
+                    type="number"
+                    min="1"
+                    max="1440"
+                    value="{{ old('payment_hold_minutes', $settings->payment_hold_minutes) }}"
+                    placeholder="e.g. 30"
+                    class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
+                >
+                @error('payment_hold_minutes')
+                    <p class="text-xs text-rose-600 dark:text-rose-400">{{ $message }}</p>
+                @enderror
             </div>
-
-            <div class="mt-5 grid grid-cols-2 gap-2 border-t border-ink-100 pt-4 sm:grid-cols-4 dark:border-ink-800">
-                @foreach ($settings->periodRanges() as $range)
-                    <div class="rounded-lg px-3 py-2 {{ $range['has_slots'] ? 'bg-ink-100/60 dark:bg-ink-800/50' : 'bg-ink-50 dark:bg-ink-900/40' }}">
-                        <p class="text-xs font-semibold {{ $range['has_slots'] ? 'text-ink-700 dark:text-ink-200' : 'text-ink-400 dark:text-ink-600' }}">{{ $range['label'] }}</p>
-                        @if ($range['has_slots'])
-                            <p class="text-xs text-ink-500 dark:text-ink-400">{{ $range['from'] }} to {{ $range['to'] }}</p>
-                        @else
-                            <p class="text-xs text-ink-400 dark:text-ink-600">Not within operating hours</p>
-                        @endif
-                    </div>
-                @endforeach
-            </div>
-
-            <p class="mt-3 text-xs text-ink-400">Changing hours does not rewrite slots already generated. It only affects newly created ones.</p>
         </div>
 
         <button type="submit" class="col-span-full w-fit rounded-full bg-ink-950 px-6 py-3 text-sm font-semibold text-white hover:bg-ink-800 dark:bg-accent-500 dark:text-ink-950 dark:hover:bg-accent-400">
