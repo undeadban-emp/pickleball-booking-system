@@ -20,19 +20,12 @@ class DashboardController extends Controller
         // "Sales" = money actually confirmed received - payment_reviewed_at is
         // when an admin approved the reference (or, for a front-desk booking,
         // when it was created already-confirmed), not just when the customer
-        // first submitted a booking that might still get rejected.
-        //
-        // Rebooked bookings (e.g. rained out, rescheduled) are excluded - no
-        // new money changed hands, it's the same payment as before. But the
+        // first submitted a booking that might still get rejected. See
+        // Booking::scopeSales() for the rebook-exclusion rationale - the
         // ORIGINAL booking still counts on its original day even though it's
-        // since been auto-cancelled as "rescheduled" - otherwise the revenue
-        // would vanish from the reports entirely instead of just moving,
-        // which is exactly the "money going to waste" this is meant to avoid.
-        $salesQuery = fn ($from, $to) => Booking::where(function ($q) {
-                $q->whereIn('status', ['confirmed', 'completed'])
-                    ->orWhere(fn ($q2) => $q2->where('status', 'cancelled')->whereHas('rebookedTo'));
-            })
-            ->whereNull('rebooked_from_id')
+        // since been auto-cancelled as "rescheduled", otherwise the revenue
+        // would vanish from the reports entirely instead of just moving.
+        $salesQuery = fn ($from, $to) => Booking::sales()
             ->whereDate('payment_reviewed_at', '>=', $from)
             ->whereDate('payment_reviewed_at', '<=', $to)
             ->selectRaw('COALESCE(SUM(total_price), 0) as total, COUNT(*) as count')

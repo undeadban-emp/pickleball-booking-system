@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -45,6 +46,25 @@ class Booking extends Model
             'checked_in_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Bookings that represent money actually confirmed received - excludes
+     * pending/rejected bookings, and excludes the "old" side of a rebook
+     * (rain/reschedule) since no new money changed hands there, only the
+     * new booking it moved to should count.
+     */
+    public function scopeSales(Builder $query): Builder
+    {
+        // Columns are qualified with `bookings.` because callers often join
+        // in other tables (courts, payment_methods, ...) that also have a
+        // `status` column - unqualified would throw "ambiguous column".
+        return $query
+            ->where(function (Builder $q) {
+                $q->whereIn('bookings.status', ['confirmed', 'completed'])
+                    ->orWhere(fn (Builder $q2) => $q2->where('bookings.status', 'cancelled')->whereHas('rebookedTo'));
+            })
+            ->whereNull('bookings.rebooked_from_id');
     }
 
     public function user(): BelongsTo
