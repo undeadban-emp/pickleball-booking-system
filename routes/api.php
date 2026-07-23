@@ -1,9 +1,14 @@
 <?php
 
 use App\Http\Controllers\Api\Admin\BookingController as AdminBookingController;
+use App\Http\Controllers\Api\Admin\BookingReportController as AdminBookingReportController;
+use App\Http\Controllers\Api\Admin\ClientReportController as AdminClientReportController;
 use App\Http\Controllers\Api\Admin\CourtController as AdminCourtController;
+use App\Http\Controllers\Api\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Api\Admin\HeroImageController as AdminHeroImageController;
 use App\Http\Controllers\Api\Admin\PaymentMethodController as AdminPaymentMethodController;
+use App\Http\Controllers\Api\Admin\RevenueReportController as AdminRevenueReportController;
+use App\Http\Controllers\Api\Admin\ScheduleController as AdminScheduleController;
 use App\Http\Controllers\Api\Admin\SettingsController as AdminSettingsController;
 use App\Http\Controllers\Api\AppUpdateController;
 use App\Http\Controllers\Api\AuthController;
@@ -42,9 +47,9 @@ Route::middleware('app.token')->group(function () {
 
     // Customer: book + list their own bookings
     Route::middleware(['auth:sanctum', 'role:customer'])->group(function () {
+        Route::get('/bookings/{booking}', [BookingController::class, 'show']);
         Route::get('/bookings/mine', [BookingController::class, 'mine']);
         Route::post('/bookings', [BookingController::class, 'store']);
-        Route::get('/bookings/{booking}', [BookingController::class, 'show']);
         Route::post('/bookings/{booking}/gcash-reference', [BookingController::class, 'submitGcashReference']);
         Route::get('/bookings/{booking}/checkin-qr', [BookingController::class, 'checkinQr']);
     });
@@ -54,11 +59,11 @@ Route::middleware('app.token')->group(function () {
         Route::prefix('admin')->group(function () {
             Route::get('/bookings', [AdminBookingController::class, 'index']);
             Route::get('/bookings/latest', [AdminBookingController::class, 'latest']);
+            Route::get('/schedule', [AdminScheduleController::class, 'index']);
         });
 
         Route::prefix('checkin')->group(function () {
             Route::post('/validate', [CheckinController::class, 'validateToken']);
-            Route::post('/{booking}/confirm', [CheckinController::class, 'confirm']);
         });
 
         // Booking decisions: admin and staff both manage the booking queue.
@@ -69,17 +74,27 @@ Route::middleware('app.token')->group(function () {
         });
     });
 
-    // Admin-only: court/settings/catalog management
+    // Admin-only: dashboard, reports, court/settings/catalog management
     Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
+        Route::get('/dashboard', [AdminDashboardController::class, 'index']);
+
         Route::get('/courts', [AdminCourtController::class, 'index']);
         Route::post('/courts', [AdminCourtController::class, 'store']);
         Route::put('/courts/{court}', [AdminCourtController::class, 'update']);
         Route::post('/courts/{court}/maintenance', [AdminCourtController::class, 'toggleMaintenance']);
         Route::post('/courts/{court}/toggle-active', [AdminCourtController::class, 'toggleActive']);
 
+        Route::get('/reports/bookings', [AdminBookingReportController::class, 'index']);
+        Route::get('/reports/revenue', [AdminRevenueReportController::class, 'index']);
+        Route::get('/reports/clients', [AdminClientReportController::class, 'index']);
+
         Route::get('/settings', [AdminSettingsController::class, 'show']);
         Route::post('/settings', [AdminSettingsController::class, 'update']);
         Route::post('/settings/logo/remove', [AdminSettingsController::class, 'removeLogo']);
+        Route::post('/settings/hours', [AdminSettingsController::class, 'updateHours']);
+        Route::post('/settings/location', [AdminSettingsController::class, 'updateLocation']);
+        Route::get('/settings/rates', [AdminCourtController::class, 'rates']);
+        Route::put('/settings/rates/{court}', [AdminCourtController::class, 'updateRate']);
 
         Route::get('/payment-methods', [AdminPaymentMethodController::class, 'index']);
         Route::post('/payment-methods', [AdminPaymentMethodController::class, 'store']);
