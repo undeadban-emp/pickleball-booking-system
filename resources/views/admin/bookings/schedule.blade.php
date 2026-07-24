@@ -53,6 +53,15 @@
 
     <div class="flex flex-wrap items-center justify-between gap-3">
         <h1 class="font-display text-2xl font-semibold tracking-tight text-ink-950 dark:text-white">Day Schedule</h1>
+        <a
+            href="{{ route('admin.reports.bookings.pdf', ['from' => $selectedStr, 'to' => $selectedStr]) }}"
+            target="_blank"
+            rel="noopener"
+            class="inline-flex items-center gap-2 rounded-xl border border-ink-200 bg-white px-4 py-2 text-sm font-semibold text-ink-700 transition-colors hover:border-ink-400 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-200 dark:hover:border-ink-500"
+        >
+            <i class="ph ph-printer text-base"></i>
+            Print this day
+        </a>
     </div>
 
     @if (session('status'))
@@ -301,10 +310,15 @@
                     <div>
                         <p class="text-xs font-semibold tracking-wide text-ink-400 uppercase">Payment</p>
                         @if ($booking->gcash_reference)
-                            <p class="mt-1 font-mono text-sm text-ink-900 dark:text-ink-100">{{ $booking->gcash_reference }}</p>
+                            <p class="mt-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                                <i class="ph ph-check-circle text-sm"></i> Reference submitted
+                            </p>
+                            <p class="mt-2 font-mono text-sm text-ink-900 dark:text-ink-100">{{ $booking->gcash_reference }}</p>
                             <p class="text-xs text-ink-500 dark:text-ink-400">Submitted {{ $booking->gcash_submitted_at?->format('M j, g:i A') }}</p>
                         @else
-                            <p class="mt-1 text-sm text-ink-500 dark:text-ink-400">No reference submitted yet.</p>
+                            <p class="mt-1 inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
+                                <i class="ph ph-x-circle text-sm"></i> No reference submitted yet
+                            </p>
                         @endif
 
                         @if ($booking->paymentProofUrl())

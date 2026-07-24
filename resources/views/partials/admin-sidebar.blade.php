@@ -125,7 +125,7 @@
     </nav>
 
     <div class="border-t border-ink-800 p-3">
-        <a href="{{ url('/') }}" class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-ink-400 transition-colors hover:bg-ink-900 hover:text-white">
+        <a href="{{ url('/') }}" target="_blank" rel="noopener" class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-ink-400 transition-colors hover:bg-ink-900 hover:text-white">
             <i class="ph ph-arrow-square-out text-lg"></i>
             View site
         </a>

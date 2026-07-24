@@ -134,8 +134,8 @@ class BookingController extends Controller
             'court_slot_ids' => ['required', 'array', 'min:1', 'max:24'],
             'court_slot_ids.*' => ['integer', 'distinct', 'exists:court_slots,id'],
             'guest_name' => ['required', 'string', 'max:120'],
-            'guest_phone' => ['required', 'string', 'max:30'],
-            'guest_email' => ['nullable', 'email', 'max:150'],
+            'guest_phone' => ['required', 'string', 'regex:/^(09\d{9}|\+639\d{9})$/'],
+            'guest_email' => ['required', 'email', 'max:150'],
         ]);
 
         $court = Court::findOrFail($data['court_id']);
