@@ -122,7 +122,7 @@ class RevenueReportController extends Controller
             ->get(['total_price', 'rejection_reason']);
 
         $cancelled = Booking::where('status', 'cancelled')
-            ->whereDoesntHave('rebookedTo')
+            ->whereDoesntHave('rescheduledTo')
             ->whereBetween('cancelled_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
             ->get(['total_price', 'cancellation_reason']);
 

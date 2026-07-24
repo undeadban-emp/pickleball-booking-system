@@ -107,7 +107,7 @@ class BookingReportController extends Controller
 
     protected function rebookImpact(Carbon $from, Carbon $to): array
     {
-        $rebooked = Booking::whereNotNull('rebooked_from_id')
+        $rebooked = Booking::whereNotNull('rescheduled_from_id')
             ->whereBetween('created_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
             ->get(['total_price']);
 

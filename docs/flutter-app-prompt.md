@@ -127,7 +127,7 @@ Customer booking flow screens: Court list → date/slot picker (use `/availabili
 | GET | `/admin/schedule?date=YYYY-MM-DD` | Day Schedule: every booking touching that date (default today), sorted by start time — see shape below |
 | POST | `/checkin/validate` | Body: `{ "token": "..." }` — the entire check-in: verifies the scanned/typed code belongs to a live, confirmed booking and returns a display-ready summary. Read-only, no separate confirm step — this call doesn't change the booking's status. |
 
-`/admin/schedule` response — one entry per booking on that date, each the same summary shape as above (`id`, `reference`, `status`, `status_label`, `customer`, `phone`, `email`, `court`, `schedule`, `total`) plus these extra keys:
+`/admin/schedule` response — one entry per booking on that date, each the same summary shape as above (`id`, `reference`, `status`, `status_label`, `customer`, `phone`, `email`, `court`, `schedule`, `total`) plus these extra keys, plus a top-level `rescheduled_away` list:
 ```json
 {
   "data": {
@@ -147,17 +147,20 @@ Customer booking flow screens: Court list → date/slot picker (use `/availabili
         "is_guest": false,
         "payment": { "reference": "312321", "submitted_at": "Jul 23, 8:20 AM", "proof_url": "https://.../payment-proofs/xyz.jpg" },
         "note": null,
-        "rebooked_from": null,
         "history": [
-          { "status": "confirmed", "label": "Confirmed", "at": "Jul 23, 4:26 PM", "by": "Kitchen Line Admin" },
-          { "status": "pending_payment", "label": "Pending Payment", "at": "Jul 23, 4:20 PM", "by": "Demo Player" }
+          { "label": "Confirmed", "at": "Jul 23, 4:26 PM", "by": "Kitchen Line Admin" },
+          { "label": "Rescheduled from Jul 20, 1:00 PM–2:00 PM to Jul 28, 1:00 PM–2:00 PM", "at": "Jul 22, 10:02 AM", "by": "Kitchen Line Admin" },
+          { "label": "Pending Payment", "at": "Jul 23, 4:20 PM", "by": "Demo Player" }
         ]
       }
+    ],
+    "rescheduled_away": [
+      { "reference": "PB-20260722-QZ4T", "customer": "Juan Dela Cruz", "moved_to": "Jul 30, 2026, 9:00 AM to 10:00 AM" }
     ]
   }
 }
 ```
-`payment` is `null` when the booking never went through GCash (same convention as the customer detail screen — hide the section rather than render it empty). `note` is a human-readable reason shown only for rejected/cancelled bookings (e.g. `"Cancelled by Kitchen Line Admin — Rained out"`), otherwise `null`. `rebooked_from` is non-null when this booking replaced an earlier rained-out/rescheduled one — show "Rebooked from {reference} (originally {schedule[0]})".
+`payment` is `null` when the booking never went through GCash (same convention as the customer detail screen — hide the section rather than render it empty). `note` is a human-readable reason shown only for rejected/cancelled bookings (e.g. `"Cancelled by Kitchen Line Admin — Rained out"`), otherwise `null`. Reschedules now move a booking in place (same `id`/`reference` throughout) rather than creating a new booking, so `history` is a merged, newest-first timeline of both status changes *and* reschedules — a reschedule entry's `label` already reads as a full sentence, render it as-is. `rescheduled_away` is a **separate list**, not part of `bookings` — it's every booking that used to be on this date but got moved to a different one; show it as a distinct "Rescheduled away from this day" section below the main list, each row reading `"{reference} · {customer} moved to {moved_to}"`.
 
 Day Schedule screen: a month calendar (any date-picker widget works — the API doesn't need a full calendar grid, just pass the tapped date) above a list of that day's bookings, tap-through to a detail sheet using the fields above. This is the same screen and same data as the web "Day Schedule" page, just native.
 
