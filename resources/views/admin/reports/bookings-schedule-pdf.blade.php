@@ -5,7 +5,14 @@
     <title>Court Schedule {{ $from->toDateString() }} to {{ $to->toDateString() }}</title>
     <style>
         @page {
-            margin: 20px 28px;
+            margin: 155px 28px 24px 28px;
+        }
+
+        .page-header {
+            position: fixed;
+            top: -135px;
+            left: 0;
+            right: 0;
         }
 
         * {
@@ -21,22 +28,26 @@
         .doc-header {
             width: 100%;
             border-bottom: 2px solid #1c1917;
-            padding-bottom: 8px;
-            margin-bottom: 12px;
         }
 
         .doc-header td {
             vertical-align: middle;
         }
 
+        .doc-header .legend-row td {
+            padding-top: 6px;
+            padding-bottom: 8px;
+        }
+
         .doc-header .logo {
-            height: 52px;
+            height: 62px;
             width: auto;
         }
 
         .doc-header .brand {
             font-size: 15px;
             font-weight: bold;
+            margin-top: -15px;
         }
 
         .doc-header .range {
@@ -49,10 +60,6 @@
             font-size: 13px;
             font-weight: bold;
             margin: 0 0 2px;
-        }
-
-        .legend {
-            margin-bottom: 14px;
         }
 
         .legend span {
@@ -141,29 +148,32 @@
     </style>
 </head>
 <body>
-    <table class="doc-header">
-        <tr>
-            <td style="width: 60%;">
-                @if ($logoPath)
-                    <img src="{{ $logoPath }}" class="logo">
-                @endif
-                @if ($brand->show_brand_text && $brand->brand_text)
-                    <div class="brand">{{ $brand->brand_text }}</div>
-                @endif
-                <p class="doc-title">Court Schedule</p>
-            </td>
-            <td class="range">
-                {{ $from->toDateString() === $to->toDateString() ? $from->format('F j, Y') : $from->format('M j, Y').' – '.$to->format('M j, Y') }}<br>
-                {{ $courts->count() === 1 ? $courts->first()->name : 'All courts' }}<br>
-                Printed {{ now()->format('M j, Y g:ia') }}
-            </td>
-        </tr>
-    </table>
-
-    <div class="legend">
-        <span><i class="swatch-vacant"></i>Vacant</span>
-        <span><i class="swatch-occupied"></i>Occupied</span>
-        <span><i class="swatch-blocked"></i>Blocked / maintenance</span>
+    <div class="page-header">
+        <table class="doc-header">
+            <tr>
+                <td style="width: 60%;">
+                    @if ($logoPath)
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="{{ $logoPath }}" class="logo">
+                    @endif
+                    @if ($brand->show_brand_text && $brand->brand_text)
+                        <div class="brand">{{ $brand->brand_text }}</div>
+                    @endif
+                    <p class="doc-title">Court Schedule</p>
+                </td>
+                <td class="range">
+                    {{ $from->toDateString() === $to->toDateString() ? $from->format('F j, Y') : $from->format('M j, Y').' – '.$to->format('M j, Y') }}<br>
+                    {{ $courts->count() === 1 ? $courts->first()->name : 'All courts' }}<br>
+                    Printed {{ now()->format('M j, Y g:ia') }}
+                </td>
+            </tr>
+            <tr class="legend-row">
+                <td colspan="2" class="legend">
+                    <span><i class="swatch-vacant"></i>Vacant</span>
+                    <span><i class="swatch-occupied"></i>Occupied</span>
+                    <span><i class="swatch-blocked"></i>Blocked / maintenance</span>
+                </td>
+            </tr>
+        </table>
     </div>
 
     @php $__first = true; @endphp

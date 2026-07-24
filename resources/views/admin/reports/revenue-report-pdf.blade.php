@@ -5,7 +5,14 @@
     <title>Revenue Report {{ $from->toDateString() }} to {{ $to->toDateString() }}</title>
     <style>
         @page {
-            margin: 22px 30px;
+            margin: 130px 30px 24px 30px;
+        }
+
+        .page-header {
+            position: fixed;
+            top: -110px;
+            left: 0;
+            right: 0;
         }
 
         * {
@@ -21,8 +28,6 @@
         .doc-header {
             width: 100%;
             border-bottom: 2px solid #1c1917;
-            padding-bottom: 8px;
-            margin-bottom: 16px;
         }
 
         .doc-header td {
@@ -30,13 +35,14 @@
         }
 
         .doc-header .logo {
-            height: 46px;
+            height: 62px;
             width: auto;
         }
 
         .doc-header .brand {
             font-size: 14px;
             font-weight: bold;
+            margin-top: -15px;
         }
 
         .doc-header .range {
@@ -199,23 +205,25 @@
     </style>
 </head>
 <body>
-    <table class="doc-header">
-        <tr>
-            <td style="width: 60%;">
-                @if ($logoPath)
-                    <img src="{{ $logoPath }}" class="logo">
-                @endif
-                @if ($brand->show_brand_text && $brand->brand_text)
-                    <div class="brand">{{ $brand->brand_text }}</div>
-                @endif
-                <p class="doc-title">Revenue &amp; Finance Report</p>
-            </td>
-            <td class="range">
-                {{ $from->toDateString() === $to->toDateString() ? $from->format('F j, Y') : $from->format('M j, Y').' – '.$to->format('M j, Y') }}<br>
-                Printed {{ now()->format('M j, Y g:ia') }}
-            </td>
-        </tr>
-    </table>
+    <div class="page-header">
+        <table class="doc-header">
+            <tr>
+                <td style="width: 60%;">
+                    @if ($logoPath)
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="{{ $logoPath }}" class="logo">
+                    @endif
+                    @if ($brand->show_brand_text && $brand->brand_text)
+                        <div class="brand">{{ $brand->brand_text }}</div>
+                    @endif
+                    <p class="doc-title">Revenue &amp; Finance Report</p>
+                </td>
+                <td class="range">
+                    {{ $from->toDateString() === $to->toDateString() ? $from->format('F j, Y') : $from->format('M j, Y').' – '.$to->format('M j, Y') }}<br>
+                    Printed {{ now()->format('M j, Y g:ia') }}
+                </td>
+            </tr>
+        </table>
+    </div>
 
     <table class="kpi-table">
         <tr>
