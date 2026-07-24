@@ -78,6 +78,25 @@
                 Log in
             </button>
 
+            <div class="flex items-center gap-3">
+                <div class="h-px flex-1 bg-ink-200 dark:bg-ink-700"></div>
+                <span class="text-xs font-medium text-ink-400 dark:text-ink-500">OR</span>
+                <div class="h-px flex-1 bg-ink-200 dark:bg-ink-700"></div>
+            </div>
+
+            <a
+                href="{{ route('auth.google') }}"
+                class="flex w-full items-center justify-center gap-2.5 rounded-full border border-ink-200 bg-white px-6 py-2.5 text-sm font-semibold text-ink-800 transition-colors hover:bg-ink-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:bg-ink-800"
+            >
+                <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.63h6.47c-.28 1.5-1.13 2.78-2.4 3.63v3h3.88c2.27-2.09 3.57-5.17 3.57-8.81z"/>
+                    <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.95-2.92l-3.88-3c-1.08.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.95H1.26v3.1C3.24 21.3 7.28 24 12 24z"/>
+                    <path fill="#FBBC05" d="M5.27 14.28A7.2 7.2 0 0 1 4.9 12c0-.79.14-1.56.37-2.28v-3.1H1.26A11.97 11.97 0 0 0 0 12c0 1.93.46 3.76 1.26 5.38l4.01-3.1z"/>
+                    <path fill="#EA4335" d="M12 4.77c1.76 0 3.35.6 4.6 1.8l3.44-3.44C17.95 1.19 15.24 0 12 0 7.28 0 3.24 2.7 1.26 6.62l4.01 3.1c.95-2.84 3.6-4.95 6.73-4.95z"/>
+                </svg>
+                Continue with Google
+            </a>
+
             <p class="text-center text-sm text-ink-600 dark:text-ink-400">
                 Don't have an account? <a href="{{ route('register') }}" class="font-semibold text-ink-950 underline dark:text-white">Create one</a>
             </p>
