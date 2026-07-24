@@ -53,6 +53,15 @@
 
     <div class="flex flex-wrap items-center justify-between gap-3">
         <h1 class="font-display text-2xl font-semibold tracking-tight text-ink-950 dark:text-white">Day Schedule</h1>
+        <a
+            href="{{ route('admin.reports.bookings.pdf', ['from' => $selectedStr, 'to' => $selectedStr]) }}"
+            target="_blank"
+            rel="noopener"
+            class="inline-flex items-center gap-2 rounded-xl border border-ink-200 bg-white px-4 py-2 text-sm font-semibold text-ink-700 transition-colors hover:border-ink-400 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-200 dark:hover:border-ink-500"
+        >
+            <i class="ph ph-printer text-base"></i>
+            Print this day
+        </a>
     </div>
 
     @if (session('status'))
