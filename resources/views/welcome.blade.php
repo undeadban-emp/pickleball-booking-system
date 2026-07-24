@@ -119,9 +119,9 @@
 
         <div class="mt-8 grid grid-cols-2 gap-6 rounded-3xl border border-ink-100 bg-white p-6 sm:grid-cols-3 sm:gap-8 sm:p-8 lg:grid-cols-6 dark:border-ink-800 dark:bg-ink-900">
             @foreach ([
-                ['icon' => 'ph-tennis-ball', 'label' => '3 Outdoor Courts'],
-                ['icon' => 'ph-clock', 'label' => 'Open 6am to 10pm'],
-                ['icon' => 'ph-drop', 'label' => 'Shower &amp; Restrooms'],
+                ['icon' => 'ph-tennis-ball', 'label' => '1 Outdoor Court'],
+                ['icon' => 'ph-clock', 'label' => 'Open 7am to 12pm'],
+                ['icon' => 'ph-drop', 'label' => 'Restrooms'],
                 ['icon' => 'ph-armchair', 'label' => 'Lounge Area'],
                 ['icon' => 'ph-video-camera', 'label' => 'CCTV Monitored'],
                 ['icon' => 'ph-car', 'label' => 'Free Parking'],
