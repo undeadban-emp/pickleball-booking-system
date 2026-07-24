@@ -29,6 +29,13 @@ window.confirmSubmit = function (form, options = {}) {
         icon = 'question',
         confirmButtonText = 'Yes',
         confirmButtonColor = '#111827',
+        // Optional: set `input`/`inputName` (e.g. input: 'textarea') to collect
+        // a value into a hidden field on the form before submitting - used by
+        // the booking reject action to capture a reason the customer sees.
+        input = undefined,
+        inputLabel = undefined,
+        inputPlaceholder = undefined,
+        inputName = null,
     } = options;
 
     window.__confirmDialogOpen = true;
@@ -37,12 +44,28 @@ window.confirmSubmit = function (form, options = {}) {
         title,
         text,
         icon,
+        input,
+        inputLabel,
+        inputPlaceholder,
         showCancelButton: true,
         confirmButtonText,
         confirmButtonColor,
         cancelButtonText: 'Cancel',
     }).then((result) => {
         if (result.isConfirmed) {
+            if (inputName) {
+                let field = form.querySelector(`[name="${inputName}"]`);
+
+                if (! field) {
+                    field = document.createElement('input');
+                    field.type = 'hidden';
+                    field.name = inputName;
+                    form.appendChild(field);
+                }
+
+                field.value = result.value || '';
+            }
+
             // Page is navigating away regardless - no need to clear the flag.
             form.submit();
             return;

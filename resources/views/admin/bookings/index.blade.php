@@ -338,7 +338,7 @@
                                     <form
                                         method="POST"
                                         action="{{ route('admin.bookings.reject', $booking) }}"
-                                        onsubmit="return confirmSubmit(this, { title: 'Reject this booking?', text: 'The customer will be notified that their payment was not confirmed.{{ $orderNote }}', icon: 'warning', confirmButtonText: 'Reject', confirmButtonColor: '#e11d48' });"
+                                        onsubmit="return confirmSubmit(this, { title: 'Reject this booking?', text: 'The customer will be notified that their payment was not confirmed.{{ $orderNote }}', icon: 'warning', confirmButtonText: 'Reject', confirmButtonColor: '#e11d48', input: 'textarea', inputLabel: 'Reason (optional, shown to the customer)', inputPlaceholder: 'e.g. Payment could not be verified', inputName: 'reason' });"
                                     >
                                         @csrf
                                         <button type="submit" class="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-600">Reject</button>
@@ -777,7 +777,7 @@
                                         </button>
                                     </form>
                                     <form method="POST" action="{{ route('admin.bookings.reject', $booking) }}" class="flex-1"
-                                        onsubmit="return confirmSubmit(this, { title: 'Reject this booking?', text: 'The customer will be notified that their payment was not confirmed.', icon: 'warning', confirmButtonText: 'Reject', confirmButtonColor: '#e11d48' });"
+                                        onsubmit="return confirmSubmit(this, { title: 'Reject this booking?', text: 'The customer will be notified that their payment was not confirmed.', icon: 'warning', confirmButtonText: 'Reject', confirmButtonColor: '#e11d48', input: 'textarea', inputLabel: 'Reason (optional, shown to the customer)', inputPlaceholder: 'e.g. Payment could not be verified', inputName: 'reason' });"
                                     >
                                         @csrf
                                         <button type="submit" class="flex w-full items-center justify-center gap-1.5 rounded-xl bg-rose-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-600">

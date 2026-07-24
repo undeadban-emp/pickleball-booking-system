@@ -9,7 +9,7 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class BookingConfirmedMail extends Mailable
+class BookingRejectedMail extends Mailable
 {
     use Queueable, SerializesModels;
 
@@ -18,17 +18,17 @@ class BookingConfirmedMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: "You're confirmed, {$this->booking->court->name}",
+            subject: "Booking not approved — {$this->booking->booking_code}",
         );
     }
 
     public function content(): Content
     {
         return new Content(
-            view: 'emails.booking-confirmed',
+            view: 'emails.booking-rejected',
             with: [
                 'booking' => $this->booking,
-                'statusUrl' => route('booking.public', $this->booking->receipt_token),
+                'rebookUrl' => route('book.index'),
             ],
         );
     }

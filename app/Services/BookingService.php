@@ -6,11 +6,14 @@ use App\Exceptions\InvalidBookingTransitionException;
 use App\Exceptions\NonContiguousSlotsException;
 use App\Exceptions\SlotUnavailableException;
 use App\Mail\BookingConfirmedMail;
+use App\Mail\BookingRejectedMail;
 use App\Models\Booking;
 use App\Models\BookingOrder;
 use App\Models\Court;
 use App\Models\CourtSlot;
+use App\Models\Email;
 use App\Models\User;
+use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -153,7 +156,7 @@ class BookingService
             throw new InvalidBookingTransitionException($booking->status, 'rejected');
         }
 
-        return DB::transaction(function () use ($booking, $admin, $reason) {
+        $booking = DB::transaction(function () use ($booking, $admin, $reason) {
             CourtSlot::whereIn('id', $booking->slots()->pluck('court_slots.id'))
                 ->update(['status' => 'available']);
 
@@ -166,8 +169,12 @@ class BookingService
 
             $this->logStatus($booking, 'pending_payment', 'rejected', $admin, $reason);
 
-            return $booking->fresh();
+            return $booking->fresh(['court', 'slots', 'user']);
         });
+
+        $this->sendRejectionEmail($booking);
+
+        return $booking;
     }
 
     public function cancel(Booking $booking, ?User $actor, ?string $reason = null): Booking
@@ -841,6 +848,39 @@ class BookingService
             return;
         }
 
-        Mail::to($email)->send(new BookingConfirmedMail($booking));
+        $this->sendAndLogEmail($email, "Your booking {$booking->booking_code} is confirmed.", new BookingConfirmedMail($booking));
+    }
+
+    protected function sendRejectionEmail(Booking $booking): void
+    {
+        $email = $booking->user->email ?? $booking->guest_email;
+
+        if (! $email) {
+            return;
+        }
+
+        $this->sendAndLogEmail($email, "Your booking {$booking->booking_code} was not approved.", new BookingRejectedMail($booking));
+    }
+
+    /**
+     * Logs every send attempt to the `emails` table (pending -> sent/failed)
+     * for support/debugging - same audit pattern as the password-reset code
+     * email, so a bounced/misconfigured mailer shows up here instead of
+     * silently vanishing.
+     */
+    protected function sendAndLogEmail(string $to, string $message, Mailable $mailable): void
+    {
+        $log = Email::create([
+            'email' => $to,
+            'message' => $message,
+            'status' => 'pending',
+        ]);
+
+        try {
+            Mail::to($to)->send($mailable);
+            $log->update(['status' => 'sent']);
+        } catch (\Throwable $e) {
+            $log->update(['status' => 'failed']);
+        }
     }
 }

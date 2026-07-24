@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
+use SimpleSoftwareIO\QrCode\Facades\QrCode;
 
 class Booking extends Model
 {
@@ -272,6 +273,24 @@ class Booking extends Model
     public function paymentProofUrl(): ?string
     {
         return $this->payment_proof_path ? asset('storage/'.$this->payment_proof_path) : null;
+    }
+
+    /**
+     * Inline SVG markup for the check-in QR, encoding this booking's
+     * `checkin_token` (same value the front-desk scanner expects - see
+     * BookingService::checkIn()) - same generate() call already used on the
+     * public booking page. SVG rather than PNG: this server has no Imagick
+     * extension, which simple-qrcode's PNG backend requires; GD isn't a
+     * supported backend for this package, so PNG isn't available here. Null
+     * until the booking is confirmed and has a token to encode.
+     */
+    public function checkinQrSvg(): ?string
+    {
+        if (! $this->checkin_token) {
+            return null;
+        }
+
+        return QrCode::format('svg')->size(200)->generate($this->checkin_token);
     }
 
     /**
