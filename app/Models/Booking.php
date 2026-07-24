@@ -69,9 +69,9 @@ class Booking extends Model
         return $query
             ->where(function (Builder $q) {
                 $q->whereIn('bookings.status', ['confirmed', 'completed'])
-                    ->orWhere(fn (Builder $q2) => $q2->where('bookings.status', 'cancelled')->whereHas('rebookedTo'));
+                    ->orWhere(fn (Builder $q2) => $q2->where('bookings.status', 'cancelled')->whereHas('rescheduledTo'));
             })
-            ->whereNull('bookings.rebooked_from_id');
+            ->whereNull('bookings.rescheduled_from_id');
     }
 
     public function user(): BelongsTo
