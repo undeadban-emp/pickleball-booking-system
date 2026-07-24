@@ -338,6 +338,8 @@
                                                     name="guest_phone"
                                                     type="tel"
                                                     required
+                                                    pattern="^(09\d{9}|\+639\d{9})$"
+                                                    title="Enter a valid PH mobile number, e.g. 09171234567 or +639171234567"
                                                     placeholder="09XX-XXX-XXXX"
                                                     value="{{ old('guest_phone') }}"
                                                     class="w-full rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm text-ink-950 placeholder:text-ink-400 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-white"

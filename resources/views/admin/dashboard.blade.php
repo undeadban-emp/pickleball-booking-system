@@ -117,7 +117,17 @@
                             <td class="px-4 py-3 text-ink-800 dark:text-ink-200">{{ $booking->contactName() }}</td>
                             <td class="px-4 py-3 text-ink-600 dark:text-ink-400">{{ $booking->court->name }}</td>
                             <td class="px-4 py-3 text-ink-600 dark:text-ink-400">
-                                {{ $booking->gcash_reference ?? 'Not submitted' }}
+                                @if ($booking->gcash_reference)
+                                    <span class="inline-flex items-center gap-1 font-mono text-xs text-emerald-700 dark:text-emerald-400">
+                                        <i class="ph ph-check-circle text-sm"></i>
+                                        {{ $booking->gcash_reference }}
+                                    </span>
+                                @else
+                                    <span class="inline-flex items-center gap-1 text-xs font-medium text-rose-600 dark:text-rose-400">
+                                        <i class="ph ph-x-circle text-sm"></i>
+                                        Not submitted
+                                    </span>
+                                @endif
                                 @if ($booking->paymentProofUrl())
                                     <span x-data="{ lightbox: false, zoomed: false }">
                                         <button type="button" @click="lightbox = true" class="ml-1 inline-flex items-center text-accent-700 hover:text-accent-800 dark:text-accent-400" title="View proof of payment">

@@ -43,11 +43,13 @@ class CourtBookingController extends Controller
 
         if (! Auth::check()) {
             $rules['guest_name'] = ['required', 'string', 'max:120'];
-            $rules['guest_phone'] = ['required', 'string', 'max:30'];
+            $rules['guest_phone'] = ['required', 'string', 'regex:/^(09\d{9}|\+639\d{9})$/'];
             $rules['guest_email'] = ['required', 'email', 'max:150'];
         }
 
-        $data = $request->validate($rules);
+        $data = $request->validate($rules, [
+            'guest_phone.regex' => 'Enter a valid PH mobile number, e.g. 09171234567 or +639171234567.',
+        ]);
 
         $guest = Auth::check() ? null : [
             'name' => $data['guest_name'],

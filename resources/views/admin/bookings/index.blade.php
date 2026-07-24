@@ -227,7 +227,17 @@
                         </td>
                         <td class="px-4 py-3 text-ink-700 dark:text-ink-300">{{ $booking->court->name }}</td>
                         <td class="px-4 py-3 text-ink-700 dark:text-ink-300">
-                            {{ $booking->gcash_reference ?? 'Not submitted' }}
+                            @if ($booking->gcash_reference)
+                                <span class="inline-flex items-center gap-1 font-mono text-xs text-emerald-700 dark:text-emerald-400">
+                                    <i class="ph ph-check-circle text-sm"></i>
+                                    {{ $booking->gcash_reference }}
+                                </span>
+                            @else
+                                <span class="inline-flex items-center gap-1 text-xs font-medium text-rose-600 dark:text-rose-400">
+                                    <i class="ph ph-x-circle text-sm"></i>
+                                    Not submitted
+                                </span>
+                            @endif
                             @if ($booking->paymentProofUrl())
                                 <i class="ph ph-image ml-1 text-sm text-accent-700 dark:text-accent-400" title="Proof of payment attached"></i>
                             @endif
@@ -511,10 +521,15 @@
                             <i class="ph ph-receipt text-sm"></i> Payment
                         </p>
                         @if ($booking->gcash_reference)
+                            <p class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                                <i class="ph ph-check-circle text-sm"></i> Reference submitted
+                            </p>
                             <p class="mt-2 font-mono text-sm text-ink-900 dark:text-ink-100">{{ $booking->gcash_reference }}</p>
                             <p class="text-xs text-ink-500 dark:text-ink-400">Submitted {{ $booking->gcash_submitted_at?->format('M j, g:i A') }}</p>
                         @else
-                            <p class="mt-2 text-sm text-ink-500 dark:text-ink-400">No reference submitted yet.</p>
+                            <p class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
+                                <i class="ph ph-x-circle text-sm"></i> No reference submitted yet
+                            </p>
                         @endif
 
                         @if ($booking->paymentProofUrl())

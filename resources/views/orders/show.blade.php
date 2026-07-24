@@ -180,7 +180,7 @@
                 @if ($order->status === 'pending_payment' && ! $order->gcash_reference)
                     <div
                         x-data="{
-                            step: {{ $paymentMethods->count() > 1 ? 1 : 2 }},
+                            step: {{ $errors->hasAny(['gcash_reference', 'proof_of_payment']) ? 3 : ($paymentMethods->count() > 1 ? 1 : 2) }},
                             methods: {{ $paymentMethods->map(fn ($m) => ['id' => $m->id, 'name' => $m->name, 'account_number' => $m->account_number, 'account_name' => $m->account_name, 'instructions' => $m->instructions, 'qr_url' => $m->qrUrl()])->values()->toJson() }},
                             selectedId: {{ $paymentMethods->first()?->id ?? 'null' }},
                             get selected() { return this.methods.find(m => m.id === this.selectedId) ?? null; }

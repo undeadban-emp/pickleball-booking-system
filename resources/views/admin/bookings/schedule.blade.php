@@ -301,10 +301,15 @@
                     <div>
                         <p class="text-xs font-semibold tracking-wide text-ink-400 uppercase">Payment</p>
                         @if ($booking->gcash_reference)
-                            <p class="mt-1 font-mono text-sm text-ink-900 dark:text-ink-100">{{ $booking->gcash_reference }}</p>
+                            <p class="mt-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                                <i class="ph ph-check-circle text-sm"></i> Reference submitted
+                            </p>
+                            <p class="mt-2 font-mono text-sm text-ink-900 dark:text-ink-100">{{ $booking->gcash_reference }}</p>
                             <p class="text-xs text-ink-500 dark:text-ink-400">Submitted {{ $booking->gcash_submitted_at?->format('M j, g:i A') }}</p>
                         @else
-                            <p class="mt-1 text-sm text-ink-500 dark:text-ink-400">No reference submitted yet.</p>
+                            <p class="mt-1 inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
+                                <i class="ph ph-x-circle text-sm"></i> No reference submitted yet
+                            </p>
                         @endif
 
                         @if ($booking->paymentProofUrl())
