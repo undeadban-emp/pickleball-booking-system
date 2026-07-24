@@ -1,3 +1,6 @@
+/.htaccess
+/public/.htaccess
+/public/index.php
 *.log
 .DS_Store
 .env
