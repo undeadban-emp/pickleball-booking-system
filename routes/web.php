@@ -193,6 +193,8 @@ Route::middleware(['auth', 'role:admin,staff'])->prefix('admin')->name('admin.')
         Route::get('/settings/location', [SettingsController::class, 'editLocation'])->name('settings.location');
         Route::put('/settings/location', [SettingsController::class, 'updateLocation'])->name('settings.location.update');
 
+        Route::get('/settings/account', [SettingsController::class, 'account'])->name('settings.account');
+
         Route::get('/settings/emails', [EmailController::class, 'index'])->name('settings.emails.index');
         Route::post('/settings/emails', [EmailController::class, 'store'])->name('settings.emails.store');
         Route::put('/settings/emails/{email}', [EmailController::class, 'update'])->name('settings.emails.update');

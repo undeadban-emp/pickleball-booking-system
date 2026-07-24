@@ -7,6 +7,7 @@ use App\Models\Court;
 use App\Models\OperatingHours;
 use App\Support\SlotGenerator;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 
 class SettingsController extends Controller
@@ -14,6 +15,18 @@ class SettingsController extends Controller
     public function edit()
     {
         return view('admin.settings.edit', ['settings' => OperatingHours::current()]);
+    }
+
+    /**
+     * Change the logged-in admin/staff's own name/email/phone and password -
+     * reuses ProfileController's update()/updatePassword() actions as-is
+     * (they already operate generically on Auth::user()), this is just an
+     * admin-styled entry point to the same forms instead of the
+     * customer-facing profile page.
+     */
+    public function account()
+    {
+        return view('admin.settings.account', ['user' => Auth::user()]);
     }
 
     public function update(Request $request)
