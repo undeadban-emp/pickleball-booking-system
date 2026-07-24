@@ -30,7 +30,42 @@
 
     @if ($searched)
         <div class="mt-6 max-w-lg">
-            @if (! $booking)
+            @if ($order)
+                <div class="rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
+                    <p class="font-display text-lg font-semibold text-ink-950 dark:text-white">{{ $order->contactName() }}</p>
+                    <p class="text-sm text-ink-500 dark:text-ink-400">Order · {{ $order->bookings->count() }} sessions — pick the one they're here for</p>
+
+                    <div class="mt-3 space-y-3">
+                        @foreach ($order->bookings->sortBy(fn ($b) => $b->slots->first()?->start_time) as $session)
+                            <div class="rounded-xl border border-ink-100 p-3 dark:border-ink-800">
+                                <p class="text-sm font-medium text-ink-900 dark:text-ink-100">{{ $session->court->name }}, {{ $session->booking_code }}</p>
+                                <ul class="mt-1 space-y-0.5 text-sm text-ink-600 dark:text-ink-400">
+                                    @foreach ($session->slots->sortBy('start_time') as $slot)
+                                        <li>{{ \Illuminate\Support\Carbon::parse($slot->slot_date)->format('M j') }}, {{ \Illuminate\Support\Carbon::parse($slot->start_time)->format('g:i A') }} to {{ \Illuminate\Support\Carbon::parse($slot->end_time)->format('g:i A') }}</li>
+                                    @endforeach
+                                </ul>
+
+                                @if ($session->status === 'confirmed' && ! $session->checked_in_at)
+                                    <form method="POST" action="{{ route('admin.checkin.confirm', $session) }}" class="mt-3">
+                                        @csrf
+                                        <button type="submit" class="w-full rounded-full bg-accent-500 px-4 py-2 text-sm font-semibold text-ink-950 hover:bg-accent-400">
+                                            Confirm check-in
+                                        </button>
+                                    </form>
+                                @elseif ($session->checked_in_at)
+                                    <p class="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                        Already checked in at {{ $session->checked_in_at->format('g:i A') }}.
+                                    </p>
+                                @else
+                                    <p class="mt-3 rounded-xl bg-ink-100 px-3 py-2 text-xs text-ink-600 dark:bg-ink-800 dark:text-ink-400">
+                                        Not confirmed ({{ str($session->status)->replace('_', ' ')->headline() }}).
+                                    </p>
+                                @endif
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            @elseif (! $booking)
                 <p class="rounded-xl border border-ink-200 bg-white p-4 text-sm text-ink-600 dark:border-ink-800 dark:bg-ink-900 dark:text-ink-400">No booking found for that code.</p>
             @else
                 <div class="rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">

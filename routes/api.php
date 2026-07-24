@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\AvailabilityController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\CheckinController;
 use App\Http\Controllers\Api\CourtController;
+use App\Http\Controllers\Api\OpenPlayController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -47,6 +48,22 @@ Route::middleware('app.token')->group(function () {
         Route::get('/bookings/{booking}', [BookingController::class, 'show']);
         Route::post('/bookings/{booking}/gcash-reference', [BookingController::class, 'submitGcashReference']);
         Route::get('/bookings/{booking}/checkin-qr', [BookingController::class, 'checkinQr']);
+
+        // Open Play: hosted from a customer's own confirmed booking, no
+        // separate admin surface - see routes/web.php for the same split.
+        Route::get('/open-play/rooms', [OpenPlayController::class, 'index']);
+        Route::get('/open-play/rooms/{room}', [OpenPlayController::class, 'show']);
+        Route::post('/open-play/rooms', [OpenPlayController::class, 'store']);
+        Route::post('/open-play/rooms/{room}/join', [OpenPlayController::class, 'join']);
+        Route::post('/open-play/rooms/{room}/leave', [OpenPlayController::class, 'leave']);
+        Route::post('/open-play/rooms/{room}/check-in', [OpenPlayController::class, 'checkIn']);
+        Route::post('/open-play/rooms/{room}/start', [OpenPlayController::class, 'start']);
+        Route::post('/open-play/rooms/{room}/matches/{match}/complete', [OpenPlayController::class, 'completeMatch']);
+        Route::post('/open-play/rooms/{room}/end', [OpenPlayController::class, 'end']);
+        Route::get('/open-play/rooms/{room}/dashboard', [OpenPlayController::class, 'dashboard']);
+        Route::get('/open-play/rooms/{room}/summary', [OpenPlayController::class, 'summary']);
+        Route::get('/open-play/history', [OpenPlayController::class, 'history']);
+        Route::get('/open-play/players/{user}', [OpenPlayController::class, 'player']);
     });
 
     // Staff + admin: booking oversight and front-desk check-in

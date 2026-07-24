@@ -4,15 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\NonContiguousSlotsException;
 use App\Exceptions\SlotUnavailableException;
+use App\Models\BookingOrder;
 use App\Models\Court;
 use App\Models\OperatingHours;
-use App\Services\BookingService;
+use App\Services\BookingOrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class CourtBookingController extends Controller
 {
-    public function __construct(protected BookingService $bookings) {}
+    public function __construct(protected BookingOrderService $checkout) {}
 
     public function index()
     {
@@ -29,13 +30,14 @@ class CourtBookingController extends Controller
         return view('book.show', [
             'court' => $court,
             'periodBoundaries' => OperatingHours::current()->periodBoundaries(),
+            'periodEnds' => OperatingHours::current()->periodEnds(),
         ]);
     }
 
     public function store(Request $request, Court $court)
     {
         $rules = [
-            'court_slot_ids' => ['required', 'array', 'min:1', 'max:6'],
+            'court_slot_ids' => ['required', 'array', 'min:1', 'max:24'],
             'court_slot_ids.*' => ['integer', 'distinct', 'exists:court_slots,id'],
         ];
 
@@ -54,13 +56,15 @@ class CourtBookingController extends Controller
         ];
 
         try {
-            $booking = $this->bookings->createBooking(Auth::user(), $court, $data['court_slot_ids'], $guest);
+            $result = $this->checkout->checkout(Auth::user(), $court, $data['court_slot_ids'], $guest);
         } catch (NonContiguousSlotsException $e) {
             return back()->withErrors(['court_slot_ids' => $e->getMessage()])->withInput();
         } catch (SlotUnavailableException $e) {
             return back()->withErrors(['court_slot_ids' => $e->getMessage()])->withInput();
         }
 
-        return redirect()->route('booking.public', $booking->receipt_token);
+        return $result instanceof BookingOrder
+            ? redirect()->route('order.public', $result->receipt_token)
+            : redirect()->route('booking.public', $result->receipt_token);
     }
 }

@@ -24,7 +24,7 @@ class StoreBookingRequest extends FormRequest
     {
         return [
             'court_id' => ['required', 'integer', 'exists:courts,id'],
-            'court_slot_ids' => ['required', 'array', 'min:1', 'max:6'],
+            'court_slot_ids' => ['required', 'array', 'min:1', 'max:24'],
             'court_slot_ids.*' => ['integer', 'distinct', 'exists:court_slots,id'],
         ];
     }

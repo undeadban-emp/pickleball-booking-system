@@ -8,23 +8,6 @@
         <a href="{{ route('admin.bookings.index') }}" class="text-sm font-medium text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-white">Back to bookings</a>
     </div>
 
-    @if (!empty($prefill['guest_name']))
-        <div class="mt-4 rounded-xl border border-accent-200 bg-accent-50 px-4 py-3 text-sm text-accent-800 dark:border-accent-900 dark:bg-accent-950 dark:text-accent-300">
-            Rebooking for <span class="font-semibold">{{ $prefill['guest_name'] }}</span> — customer details prefilled below, just pick a new date and time.
-            @if (!empty($prefill['hours']))
-                Their original booking was <span class="font-semibold">{{ $prefill['hours'] }} hour{{ (int) $prefill['hours'] === 1 ? '' : 's' }}</span> — picking more than that will ask you to confirm.
-            @endif
-            @if ($rebookingFrom)
-                No new payment is taken — this reuses the payment from
-                <span class="font-semibold">{{ $rebookingFrom->booking_code }}</span>
-                @if (in_array($rebookingFrom->status, ['pending_payment', 'confirmed'], true))
-                    , which will be automatically cancelled as rescheduled once you confirm
-                @endif
-                .
-            @endif
-        </div>
-    @endif
-
     @error('court_slot_ids')
         <div class="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300">
             {{ $message }}
@@ -44,21 +27,18 @@
                 courts: @js($courts->map(fn ($c) => ['id' => $c->id, 'name' => $c->name, 'status' => $c->status])),
                 slotsUrlBase: '{{ url('/api/courts') }}',
                 periodBoundaries: @js($periodBoundaries),
+                periodEnds: @js($periodEnds),
                 initialCourtId: @js(isset($prefill['court_id']) ? (int) $prefill['court_id'] : null),
-                expectedHours: @js(isset($prefill['hours']) ? (int) $prefill['hours'] : null),
             })"
         >
             @csrf
-            @if ($rebookingFrom)
-                <input type="hidden" name="rebooked_from_id" value="{{ $rebookingFrom->id }}">
-            @endif
 
             <div class="space-y-4">
                 <div class="rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
                     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div class="flex flex-col gap-1.5">
                             <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Court</label>
-                            <select name="court_id" x-model="courtId" @change="onCourtOrDateChange()" required
+                            <select name="court_id" x-model="courtId" @change="onCourtChange()" required
                                 class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
                                 @foreach ($courts as $court)
                                     <option value="{{ $court->id }}">{{ $court->name }}</option>
@@ -68,7 +48,7 @@
 
                         <div class="flex flex-col gap-1.5">
                             <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Date</label>
-                            <input type="date" x-model="dateStr" :min="minDate" @change="onCourtOrDateChange()" required
+                            <input type="date" x-model="dateStr" :min="minDate" @change="onDateChange()" required
                                 class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
                         </div>
                     </div>
@@ -86,7 +66,7 @@
                             Live
                         </span>
                     </div>
-                    <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">Tap a slot to start, tap again (or another contiguous slot) to extend the range. This list refreshes automatically, so a slot someone else just booked won't stay pickable.</p>
+                    <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">Tap any slots you'd like to book. Non-contiguous picks become separate confirmed bookings. This list refreshes automatically, so a slot someone else just booked won't stay pickable.</p>
 
                     <template x-if="warning">
                         <p class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300" x-text="warning"></p>
@@ -167,14 +147,33 @@
                 <div class="rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
                     <p class="text-xs font-semibold tracking-wide text-ink-400 uppercase">Total</p>
                     <p class="mt-1 font-display text-2xl font-semibold text-ink-950 dark:text-white">₱<span x-text="totalPrice.toFixed(2)"></span></p>
-                    <p class="mt-1 text-xs text-ink-500 dark:text-ink-400"><span x-text="selectedSlots.length"></span> slot<span x-show="selectedSlots.length !== 1">s</span> selected</p>
+                    <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">
+                        <span x-text="selectedSlots.length"></span> slot<span x-show="selectedSlots.length !== 1">s</span> selected
+                        <template x-if="selectedGroups.length > 1">
+                            <span>&middot; <span x-text="selectedGroups.length"></span> separate bookings</span>
+                        </template>
+                    </p>
 
-                    <button type="submit" :disabled="selectedSlots.length === 0"
-                        class="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-ink-950 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-accent-500 dark:text-ink-950 dark:hover:bg-accent-400">
+                    <template x-if="selectedGroups.length > 0">
+                        <ul class="mt-3 space-y-1 border-t border-ink-100 pt-3 dark:border-ink-800">
+                            <template x-for="(group, i) in selectedGroups" :key="i">
+                                <li class="text-xs text-ink-600 dark:text-ink-400">
+                                    <span x-text="dateLabelFor(group[0].slot_date)"></span>,
+                                    <span x-text="formatTime(group[0].start_time)"></span>–<span x-text="formatTime(group[group.length - 1].end_time)"></span>
+                                </li>
+                            </template>
+                        </ul>
+                    </template>
+
+                    <button
+                        type="submit"
+                        :disabled="selectedSlots.length === 0"
+                        class="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-ink-950 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-accent-500 dark:text-ink-950 dark:hover:bg-accent-400"
+                    >
                         <i class="ph ph-calendar-check"></i>
-                        Confirm booking
+                        <span x-text="selectedGroups.length > 1 ? 'Confirm ' + selectedGroups.length + ' bookings' : 'Confirm booking'"></span>
                     </button>
-                    <p class="mt-2 text-center text-xs text-ink-400">Skips payment — the booking is confirmed right away.</p>
+                    <p class="mt-2 text-center text-xs text-ink-400">Skips payment — confirmed right away.</p>
                 </div>
             </div>
         </form>

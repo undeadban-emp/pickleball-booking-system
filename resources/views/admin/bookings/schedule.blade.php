@@ -19,19 +19,13 @@
         ? 'Awaiting Approval'
         : str($booking->status)->replace('_', ' ')->headline();
 
-    $originalBookingWhen = function ($booking) {
-        $slots = $booking->rebookedFrom?->slots;
-        $first = $slots?->first();
-        $last = $slots?->last();
+    // Reschedules now update the same booking in place instead of creating
+    // a replacement row - this is the most recent move, if any.
+    $rescheduleNote = fn ($booking) => $booking->relationLoaded('rescheduleLogs') ? $booking->rescheduleLogs->last() : null;
 
-        if (! $first) {
-            return null;
-        }
-
-        $when = $first->slot_date->format('M j, Y').', '.Carbon::parse($first->start_time)->format('g:i A');
-
-        return $when.' – '.Carbon::parse($last->end_time)->format('g:i A');
-    };
+    $isReschedulable = fn ($booking) => in_array($booking->status, ['pending_payment', 'confirmed'], true)
+        && (! $booking->slots->max('slot_date') || Carbon::parse($booking->slots->max('slot_date'))->gte(today()))
+        && ! $booking->openPlayRoomCourt()->exists();
 
     $todayStr = Carbon::today()->toDateString();
     $selectedStr = $date->toDateString();
@@ -143,27 +137,32 @@
                         @click="activeId = {{ $booking->id }}"
                         class="flex cursor-pointer items-center gap-4 rounded-xl border border-ink-100 p-3 transition-colors hover:bg-ink-50 dark:border-ink-800 dark:hover:bg-ink-800/50"
                     >
-                        <div class="flex w-24 shrink-0 flex-col items-start">
-                            @foreach ($booking->slots as $slot)
-                                <span class="font-mono text-sm font-semibold text-ink-900 dark:text-ink-100">{{ Carbon::parse($slot->start_time)->format('g:i A') }}</span>
+                        <div class="flex w-36 shrink-0 flex-col items-start divide-y divide-ink-100 pr-4 dark:divide-ink-800">
+                            @foreach ($booking->slots->sortBy('start_time') as $slot)
+                                <span class="w-full py-1 font-mono text-sm font-semibold text-ink-900 first:pt-0 last:pb-0 dark:text-ink-100">{{ Carbon::parse($slot->start_time)->format('g:i A') }} to {{ Carbon::parse($slot->end_time)->format('g:i A') }}</span>
                             @endforeach
                         </div>
 
                         <div class="min-w-0 flex-1">
                             <p class="truncate font-medium text-ink-900 dark:text-ink-100">{{ $booking->contactName() }}</p>
                             <p class="truncate text-xs text-ink-500 dark:text-ink-400">
-                                {{ $booking->court->name }}
+                                <span class="font-mono text-ink-400">{{ $booking->booking_code }}</span>
+                                &middot; {{ $booking->court->name }}
                                 @if ($booking->isGuestBooking())
                                     · Guest
                                 @endif
                             </p>
-                            @if ($booking->rebookedFrom)
+                            @if ($rescheduleNote($booking))
+                                @php $__log = $rescheduleNote($booking); @endphp
                                 <p class="truncate text-xs font-medium text-accent-700 dark:text-accent-400">
                                     <i class="ph ph-arrow-clockwise text-xs"></i>
-                                    Rebooked from {{ $booking->rebookedFrom->booking_code }}
-                                    @if ($originalBookingWhen($booking))
-                                        (originally {{ $originalBookingWhen($booking) }})
-                                    @endif
+                                    Rescheduled from {{ $__log->from_slot_date->format('M j') }}, {{ Carbon::parse($__log->from_start_time)->format('g:i A') }}–{{ Carbon::parse($__log->from_end_time)->format('g:i A') }}
+                                </p>
+                            @endif
+                            @if ($booking->bookingOrder)
+                                <p class="truncate text-xs font-medium text-sky-700 dark:text-sky-400">
+                                    <i class="ph ph-shopping-cart-simple text-xs"></i>
+                                    Order · {{ $booking->bookingOrder->bookings_count }} sessions
                                 </p>
                             @endif
                         </div>
@@ -192,6 +191,25 @@
                     </li>
                 @endforelse
             </ul>
+
+            @if ($rescheduledAway->isNotEmpty())
+                <div class="mt-5 border-t border-ink-100 pt-4 dark:border-ink-800">
+                    <p class="text-xs font-semibold tracking-wide text-ink-400 uppercase">Rescheduled away from this day</p>
+                    <ul class="mt-2 space-y-2">
+                        @foreach ($rescheduledAway as $log)
+                            <li class="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-xl border border-dashed border-ink-200 p-3 text-sm dark:border-ink-700">
+                                <span class="font-mono text-xs text-ink-500 dark:text-ink-400">{{ $log->booking->booking_code }}</span>
+                                <span class="text-ink-700 dark:text-ink-300">{{ $log->booking->contactName() }}</span>
+                                <span class="text-ink-400">↻ moved to</span>
+                                <a href="{{ route('admin.bookings.schedule', ['date' => $log->to_slot_date->toDateString()]) }}" class="inline-flex items-center gap-1 font-medium text-accent-700 hover:text-accent-800 dark:text-accent-400">
+                                    {{ $log->to_slot_date->format('M j, Y') }}, {{ \Illuminate\Support\Carbon::parse($log->to_start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($log->to_end_time)->format('g:i A') }}
+                                    <i class="ph ph-arrow-right text-xs"></i>
+                                </a>
+                            </li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
         </div>
     </div>
 
@@ -242,27 +260,42 @@
                         @if ($booking->user->email ?? $booking->guest_email)
                             <p class="text-sm text-ink-500 dark:text-ink-400">{{ $booking->user->email ?? $booking->guest_email }}</p>
                         @endif
-                        @if ($booking->rebookedFrom)
+                        @if ($rescheduleNote($booking))
+                            @php $__log = $rescheduleNote($booking); @endphp
                             <p class="mt-1 text-xs font-medium text-accent-700 dark:text-accent-400">
                                 <i class="ph ph-arrow-clockwise"></i>
-                                Rebooked from {{ $booking->rebookedFrom->booking_code }}
-                                @if ($originalBookingWhen($booking))
-                                    (originally {{ $originalBookingWhen($booking) }})
-                                @endif
+                                Rescheduled from {{ $__log->from_slot_date->format('M j') }}, {{ Carbon::parse($__log->from_start_time)->format('g:i A') }}–{{ Carbon::parse($__log->from_end_time)->format('g:i A') }}
+                                to {{ $__log->to_slot_date->format('M j') }}, {{ Carbon::parse($__log->to_start_time)->format('g:i A') }}–{{ Carbon::parse($__log->to_end_time)->format('g:i A') }}
                                 — no new payment taken
+                            </p>
+                        @endif
+                        @if ($booking->bookingOrder)
+                            <p class="mt-1 text-xs font-medium text-sky-700 dark:text-sky-400">
+                                <i class="ph ph-shopping-cart-simple"></i>
+                                Part of an order — {{ $booking->bookingOrder->bookings_count }} sessions, one combined payment
                             </p>
                         @endif
                     </div>
 
-                    <div>
-                        <p class="text-xs font-semibold tracking-wide text-ink-400 uppercase">Court &amp; time</p>
-                        <p class="mt-1 font-medium text-ink-900 dark:text-ink-100">{{ $booking->court->name }}</p>
-                        <ul class="mt-1 space-y-0.5 text-sm text-ink-600 dark:text-ink-400">
-                            @foreach ($booking->slots->sortBy('start_time') as $slot)
-                                <li>{{ Carbon::parse($slot->slot_date)->format('M j, Y') }}, {{ Carbon::parse($slot->start_time)->format('g:i A') }} to {{ Carbon::parse($slot->end_time)->format('g:i A') }}</li>
-                            @endforeach
-                        </ul>
-                        <p class="mt-2 font-display text-xl font-semibold text-ink-950 dark:text-white">₱{{ number_format($booking->total_price, 2) }}</p>
+                    <div class="rounded-2xl border border-ink-100 p-4 dark:border-ink-800">
+                        <p class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-400 uppercase">
+                            <i class="ph ph-calendar text-sm"></i> Court &amp; time
+                        </p>
+                        @php
+                            $firstSlot = $booking->slots->sortBy('start_time')->first();
+                            $lastSlot = $booking->slots->sortBy('start_time')->last();
+                        @endphp
+                        <p class="mt-2 font-medium text-ink-900 dark:text-ink-100">{{ $booking->court->name }}</p>
+                        @if ($firstSlot)
+                            <p class="mt-1 font-display text-sm font-semibold text-ink-950 dark:text-white">
+                                {{ Carbon::parse($firstSlot->slot_date)->format('D, M j, Y') }}
+                            </p>
+                            <p class="mt-0.5 flex items-center gap-1.5 text-sm text-ink-600 dark:text-ink-400">
+                                <i class="ph ph-clock text-sm"></i>
+                                {{ Carbon::parse($firstSlot->start_time)->format('g:i A') }}–{{ Carbon::parse($lastSlot->end_time)->format('g:i A') }}
+                            </p>
+                        @endif
+                        <p class="mt-2 border-t border-ink-100 pt-2 font-display text-xl font-semibold text-ink-950 dark:border-ink-800 dark:text-white">₱{{ number_format($booking->total_price, 2) }}</p>
                     </div>
 
                     <div>
@@ -316,17 +349,29 @@
                         </div>
                     @endif
 
-                    @if ($booking->statusLogs->isNotEmpty())
+                    @php
+                        $history = $booking->statusLogs
+                            ->map(fn ($log) => ['at' => $log->created_at, 'changedBy' => $log->changedBy, 'label' => str($log->to_status)->replace('_', ' ')->headline()])
+                            ->concat($booking->rescheduleLogs->map(fn ($log) => [
+                                'at' => $log->created_at,
+                                'changedBy' => $log->changedBy,
+                                'label' => "Rescheduled from {$log->from_slot_date->format('M j')}, ".Carbon::parse($log->from_start_time)->format('g:i A').'–'.Carbon::parse($log->from_end_time)->format('g:i A')." to {$log->to_slot_date->format('M j')}, ".Carbon::parse($log->to_start_time)->format('g:i A').'–'.Carbon::parse($log->to_end_time)->format('g:i A'),
+                            ]))
+                            ->sortByDesc('at');
+                    @endphp
+                    @if ($history->isNotEmpty())
                         <div class="lg:col-span-2">
                             <p class="text-xs font-semibold tracking-wide text-ink-400 uppercase">History</p>
                             <ul class="mt-2 space-y-2 border-l border-ink-100 pl-3 dark:border-ink-800">
-                                @foreach ($booking->statusLogs->sortByDesc('created_at') as $log)
-                                    <li class="text-xs text-ink-500 dark:text-ink-400">
-                                        <span class="font-medium text-ink-700 dark:text-ink-200">{{ str($log->to_status)->replace('_', ' ')->headline() }}</span>
-                                        {{ $log->created_at->format('M j, g:i A') }}
-                                        @if ($log->changedBy)
-                                            by {{ $log->changedBy->name }}
-                                        @endif
+                                @foreach ($history as $entry)
+                                    <li class="text-xs">
+                                        <p class="font-medium text-ink-700 dark:text-ink-200">{{ $entry['label'] }}</p>
+                                        <p class="mt-0.5 text-ink-400 dark:text-ink-500">
+                                            {{ $entry['at']->format('M j, g:i A') }}
+                                            @if ($entry['changedBy'])
+                                                &middot; by {{ $entry['changedBy']->name }}
+                                            @endif
+                                        </p>
                                     </li>
                                 @endforeach
                             </ul>
@@ -370,12 +415,12 @@
                             Open customer view
                             <i class="ph ph-arrow-square-out text-base"></i>
                         </a>
-                        @if (auth()->user()->isAdmin() || auth()->user()->isStaff())
+                        @if ((auth()->user()->isAdmin() || auth()->user()->isStaff()) && $isReschedulable($booking))
                             <a
-                                href="{{ route('admin.bookings.create', ['guest_name' => $booking->contactName(), 'guest_phone' => $booking->contactPhone(), 'guest_email' => $booking->contactEmail(), 'court_id' => $booking->court_id, 'hours' => $booking->slots->count(), 'rebook_from' => $booking->id]) }}"
+                                href="{{ route('admin.bookings.reschedule.edit', $booking) }}"
                                 class="inline-flex items-center gap-1.5 text-sm font-medium text-ink-600 hover:text-ink-900 dark:text-ink-400 dark:hover:text-white"
                             >
-                                Rebook this customer
+                                Reschedule this booking
                                 <i class="ph ph-arrow-clockwise text-base"></i>
                             </a>
                         @endif

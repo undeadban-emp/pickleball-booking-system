@@ -9,17 +9,20 @@ use App\Http\Controllers\Admin\HeroImageController;
 use App\Http\Controllers\Admin\MatchController;
 use App\Http\Controllers\Admin\MatchGameController;
 use App\Http\Controllers\Admin\PaymentMethodController;
+use App\Http\Controllers\OpenPlayController;
 use App\Models\Court;
 use App\Models\GalleryImage;
 use App\Models\HeroImage;
 use App\Models\OperatingHours;
 use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\CourtBookingController;
 use App\Http\Controllers\Customer\BookingController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicBookingController;
+use App\Http\Controllers\PublicOrderController;
 use App\Http\Controllers\QuickBookController;
 use Illuminate\Support\Facades\Route;
 
@@ -27,6 +30,7 @@ Route::get('/', function () {
     $settings = OperatingHours::current();
 
     return view('welcome', [
+        'activeCourtsCount' => Court::where('is_active', true)->count(),
         'heroImages' => HeroImage::orderBy('sort_order')->orderBy('id')->get(),
         // Newest upload first on the homepage - independent of the admin's
         // own manual sort_order (used for reordering in the Album admin page).
@@ -60,6 +64,14 @@ Route::get('/b/{token}/status', [PublicBookingController::class, 'status'])->nam
 Route::post('/b/{token}/gcash-reference', [PublicBookingController::class, 'submitReference'])->name('booking.public.gcash-reference');
 Route::post('/b/{token}/cancel', [PublicBookingController::class, 'cancel'])->name('booking.public.cancel');
 
+// Same, but for a multi-session checkout (BookingOrder) - one payment step
+// covering several underlying bookings, each of which still has its own
+// /b/{token} receipt/QR above.
+Route::get('/o/{token}', [PublicOrderController::class, 'show'])->name('order.public');
+Route::get('/o/{token}/status', [PublicOrderController::class, 'status'])->name('order.public.status');
+Route::post('/o/{token}/gcash-reference', [PublicOrderController::class, 'submitReference'])->name('order.public.gcash-reference');
+Route::post('/o/{token}/cancel', [PublicOrderController::class, 'cancel'])->name('order.public.cancel');
+
 // Court browsing + the fuller multi-slot calendar picker
 Route::get('/book', [CourtBookingController::class, 'index'])->name('book.index');
 Route::get('/book/{court}', [CourtBookingController::class, 'show'])->name('book.show');
@@ -72,6 +84,36 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
+});
+
+// Open Play: hosted by whichever customer already holds the confirmed
+// booking for that court/time - browsing/viewing a public room is open to
+// anyone, everything else (creating, joining, running a session) requires
+// login. Static sub-paths (create/history/players/{user}) are registered
+// before the dynamic {room} show route below, so e.g. "/open-play/history"
+// isn't swallowed by {room}.
+Route::get('/open-play', [OpenPlayController::class, 'index'])->name('open-play.index');
+
+Route::middleware('auth')->prefix('open-play')->name('open-play.')->group(function () {
+    Route::get('/create', [OpenPlayController::class, 'create'])->name('create');
+    Route::post('/', [OpenPlayController::class, 'store'])->name('store');
+    Route::get('/history', [OpenPlayController::class, 'history'])->name('history');
+    Route::get('/players/{user}', [OpenPlayController::class, 'player'])->name('player');
+});
+
+Route::get('/open-play/{room}', [OpenPlayController::class, 'show'])->name('open-play.show');
+
+Route::middleware('auth')->prefix('open-play')->name('open-play.')->group(function () {
+    Route::post('/{room}/join', [OpenPlayController::class, 'join'])->name('join');
+    Route::post('/{room}/leave', [OpenPlayController::class, 'leave'])->name('leave');
+    Route::post('/{room}/check-in', [OpenPlayController::class, 'checkIn'])->name('check-in');
+    Route::post('/{room}/players/{player}/check-in', [OpenPlayController::class, 'checkInPlayer'])->name('players.check-in');
+    Route::post('/{room}/start', [OpenPlayController::class, 'start'])->name('start');
+    Route::post('/{room}/matches/{match}/complete', [OpenPlayController::class, 'completeMatch'])->name('matches.complete');
+    Route::post('/{room}/end', [OpenPlayController::class, 'end'])->name('end');
+    Route::get('/{room}/dashboard', [OpenPlayController::class, 'dashboard'])->name('dashboard');
+    Route::get('/{room}/dashboard/poll', [OpenPlayController::class, 'poll'])->name('dashboard.poll');
+    Route::get('/{room}/summary', [OpenPlayController::class, 'summary'])->name('summary');
 });
 
 Route::middleware(['auth', 'role:admin,staff'])->prefix('admin')->name('admin.')->group(function () {
@@ -91,6 +133,10 @@ Route::middleware(['auth', 'role:admin,staff'])->prefix('admin')->name('admin.')
     Route::post('/bookings/{booking}/approve', [AdminBookingController::class, 'approve'])->name('bookings.approve');
     Route::post('/bookings/{booking}/reject', [AdminBookingController::class, 'reject'])->name('bookings.reject');
     Route::post('/bookings/{booking}/cancel', [AdminBookingController::class, 'cancel'])->name('bookings.cancel');
+    Route::get('/bookings/orders/{order}/reschedule', [AdminBookingController::class, 'selectReschedule'])->name('bookings.reschedule.select');
+    Route::get('/bookings/{booking}/reschedule', [AdminBookingController::class, 'editReschedule'])->name('bookings.reschedule.edit');
+    Route::post('/bookings/{booking}/reschedule', [AdminBookingController::class, 'updateReschedule'])->name('bookings.reschedule.update');
+    Route::post('/bookings/{booking}/split-reschedule', [AdminBookingController::class, 'updateSplitReschedule'])->name('bookings.split-reschedule.update');
 
     // Live match scoring on a checked-in booking: admin and staff both run these.
     Route::get('/bookings/{booking}/matches/create', [MatchController::class, 'create'])->name('matches.create');
@@ -143,5 +189,8 @@ Route::middleware(['auth', 'role:admin,staff'])->prefix('admin')->name('admin.')
         Route::post('/gallery-images/{galleryImage}/move-up', [GalleryImageController::class, 'moveUp'])->name('gallery-images.move-up');
         Route::post('/gallery-images/{galleryImage}/move-down', [GalleryImageController::class, 'moveDown'])->name('gallery-images.move-down');
         Route::delete('/gallery-images/{galleryImage}', [GalleryImageController::class, 'destroy'])->name('gallery-images.destroy');
+
+        Route::get('/users', [AdminUserController::class, 'index'])->name('users.index');
+        Route::post('/users', [AdminUserController::class, 'store'])->name('users.store');
     });
 });

@@ -15,3 +15,7 @@ Schedule::command('courts:generate-slots')->daily();
 // Releases slots held by unpaid bookings once the admin's payment window
 // passes, so they go back to available for someone else to book.
 Schedule::command('bookings:expire-pending')->everyMinute();
+
+// Closes Open Play sessions the host forgot to end - a 12-hour inactivity
+// window doesn't need per-minute polling, hourly is plenty.
+Schedule::command('open-play:auto-end-stale')->hourly();

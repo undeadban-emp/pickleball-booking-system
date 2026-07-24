@@ -72,6 +72,22 @@ class OperatingHours extends Model
     }
 
     /**
+     * End times matching periodBoundaries(), keyed the same way. Needed
+     * alongside the starts so the widgets can tell a genuine overnight
+     * spillover (evening wrapping past midnight) apart from hours that are
+     * simply before the first configured period and shouldn't be labelled
+     * with the last one just because nothing else matched.
+     */
+    public function periodEnds(): array
+    {
+        return [
+            'morning' => substr($this->period_morning_end, 0, 5),
+            'afternoon' => substr($this->period_afternoon_end, 0, 5),
+            'evening' => substr($this->period_evening_end, 0, 5),
+        ];
+    }
+
+    /**
      * Human-friendly "6am to 12 noon" style ranges for each period, using the
      * admin-configured start AND end for that period directly — not derived
      * from the next period's start, so what the admin sets is exactly what's

@@ -11,8 +11,6 @@
 
         @fonts
 
-        <script src="https://unpkg.com/@phosphor-icons/web"></script>
-
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
     <body class="bg-ink-100 text-ink-900 antialiased dark:bg-ink-950 dark:text-ink-50">

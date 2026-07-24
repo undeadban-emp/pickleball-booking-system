@@ -1,5 +1,14 @@
 @import 'tailwindcss';
 
+/* Self-hosted, regular-weight only (the only weight this app actually uses -
+   verified via grep for ph-thin/light/bold/fill/duotone before removing the
+   old setup). Replaces a <script> that pulled in all 6 weights from two
+   different third-party CDNs (unpkg + jsdelivr) on every page load - ~1.5MB+
+   of mostly-unused font/CSS, render-blocking, with no build-time caching or
+   fingerprinting. This single import is ~225KB, bundled by Vite, and served
+   same-origin. */
+@import '@phosphor-icons/web/regular';
+
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 

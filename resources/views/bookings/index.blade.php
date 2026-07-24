@@ -4,7 +4,7 @@
         class="mx-auto max-w-3xl px-4 py-14 sm:px-6 lg:px-8"
         x-data="bookingsList({
             ids: [{{ $bookings->pluck('id')->implode(',') }}],
-            statuses: {{ \Illuminate\Support\Js::from($bookings->pluck('status', 'id')) }},
+            statuses: {{ \Illuminate\Support\Js::from($displayStatuses) }},
             hasReference: {{ \Illuminate\Support\Js::from($bookings->mapWithKeys(fn ($b) => [$b->id => filled($b->gcash_reference)])) }},
             courts: {{ \Illuminate\Support\Js::from($bookings->mapWithKeys(fn ($b) => [$b->id => $b->court->name])) }},
             pollUrl: '{{ route('bookings.poll') }}',
@@ -26,16 +26,30 @@
             <div class="mt-8 space-y-3">
                 @foreach ($bookings as $booking)
                     @php
+                        $isOrder = $booking->bookingOrder && $booking->bookingOrder->bookings_count > 1;
                         $firstSlot = $booking->slots->sortBy('start_time')->first();
                     @endphp
-                    <a href="{{ route('booking.public', $booking->receipt_token) }}" class="flex items-center justify-between rounded-2xl border border-ink-100 bg-white p-4 transition-colors hover:border-accent-400 dark:border-ink-800 dark:bg-ink-900">
+                    <a
+                        href="{{ $isOrder ? route('order.public', $booking->bookingOrder->receipt_token) : route('booking.public', $booking->receipt_token) }}"
+                        class="flex items-center justify-between rounded-2xl border border-ink-100 bg-white p-4 transition-colors hover:border-accent-400 dark:border-ink-800 dark:bg-ink-900"
+                    >
                         <div>
                             <p class="font-medium text-ink-950 dark:text-white">{{ $booking->court->name }}</p>
-                            <p class="mt-0.5 text-sm text-ink-500 dark:text-ink-400">
-                                @if ($firstSlot)
-                                    {{ \Illuminate\Support\Carbon::parse($firstSlot->slot_date)->format('M j, Y') }}, {{ \Illuminate\Support\Carbon::parse($firstSlot->start_time)->format('g:i A') }}
-                                @endif
-                            </p>
+                            @if ($isOrder)
+                                <p class="mt-0.5 text-sm text-ink-500 dark:text-ink-400">
+                                    {{ $booking->bookingOrder->bookings_count }} sessions
+                                    @php $orderFirstSlot = $booking->bookingOrder->bookings->flatMap->slots->sortBy('start_time')->first(); @endphp
+                                    @if ($orderFirstSlot)
+                                        · starting {{ \Illuminate\Support\Carbon::parse($orderFirstSlot->slot_date)->format('M j, Y') }}
+                                    @endif
+                                </p>
+                            @else
+                                <p class="mt-0.5 text-sm text-ink-500 dark:text-ink-400">
+                                    @if ($firstSlot)
+                                        {{ \Illuminate\Support\Carbon::parse($firstSlot->slot_date)->format('M j, Y') }}, {{ \Illuminate\Support\Carbon::parse($firstSlot->start_time)->format('g:i A') }}
+                                    @endif
+                                </p>
+                            @endif
                         </div>
                         <span class="rounded-full px-3 py-1 text-xs font-semibold" :class="badgeClass({{ $booking->id }})" x-text="badgeLabel({{ $booking->id }})"></span>
                     </a>

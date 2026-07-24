@@ -16,15 +16,21 @@
         </a>
 
         <div class="flex items-center gap-2 sm:gap-4 md:gap-5">
-            <a href="{{ url('/') }}" class="hidden text-sm font-medium text-ink-600 transition-colors hover:text-ink-950 md:inline dark:text-ink-300 dark:hover:text-white">Home</a>
+            <a href="{{ url('/') }}" class="hidden text-sm font-medium text-ink-600 transition-colors hover:text-ink-950 md:order-1 md:inline dark:text-ink-300 dark:hover:text-white">Home</a>
+            @auth
+                <a href="{{ route('open-play.index') }}" class="hidden text-sm font-medium text-ink-600 transition-colors hover:text-ink-950 md:order-2 md:inline dark:text-ink-300 dark:hover:text-white">Open Play</a>
+            @endauth
 
             @guest
-                <a href="{{ route('register') }}" class="inline-flex items-center gap-1.5 rounded-full bg-accent-500 px-3 py-1.5 text-xs font-semibold text-white transition-transform active:scale-[0.98] hover:bg-accent-400 sm:px-4 sm:py-2 sm:text-sm">
+                <a href="{{ route('register') }}" class="inline-flex items-center gap-1.5 rounded-full bg-accent-500 px-3 py-1.5 text-xs font-semibold text-white transition-transform active:scale-[0.98] hover:bg-accent-400 sm:px-4 sm:py-2 sm:text-sm md:order-4">
                     Create account
                     <i class="ph ph-arrow-right hidden text-base sm:inline"></i>
                 </a>
             @else
-                <a href="{{ url('/').'#availability' }}" class="inline-flex items-center gap-1.5 rounded-full bg-accent-500 px-3 py-1.5 text-xs font-semibold text-white transition-transform active:scale-[0.98] hover:bg-accent-400 sm:px-4 sm:py-2 sm:text-sm">
+                {{-- Ordered after the account links below (md:order-4) so on
+                     desktop it sits right beside the account menu, not before
+                     "My bookings" - mobile keeps natural source order. --}}
+                <a href="{{ url('/').'#availability' }}" class="inline-flex items-center gap-1.5 rounded-full bg-accent-500 px-3 py-1.5 text-xs font-semibold text-white transition-transform active:scale-[0.98] hover:bg-accent-400 sm:px-4 sm:py-2 sm:text-sm md:order-4">
                     Book a court
                     <i class="ph ph-arrow-right hidden text-base sm:inline"></i>
                 </a>
@@ -33,11 +39,23 @@
             @auth
                 @if (auth()->user()->isCustomer())
                     @php
-                        $__pendingCount = auth()->user()->bookings()->where('status', 'pending_payment')->count();
+                        // Representative bookings only, so a multi-session
+                        // order pending review counts as 1 - not one per
+                        // session, which would overcount relative to what
+                        // "My bookings" actually shows.
+                        $__pendingCount = auth()->user()->bookings()
+                            ->where('status', 'pending_payment')
+                            ->where(function ($q) {
+                                $q->whereNull('booking_order_id')
+                                    ->orWhereIn('id', function ($sub) {
+                                        $sub->selectRaw('MIN(id)')->from('bookings')->whereNotNull('booking_order_id')->groupBy('booking_order_id');
+                                    });
+                            })
+                            ->count();
                     @endphp
                     <a
                         href="{{ route('bookings.index') }}"
-                        class="relative hidden text-sm font-medium text-ink-600 transition-colors hover:text-ink-950 sm:inline dark:text-ink-300 dark:hover:text-white"
+                        class="relative hidden text-sm font-medium text-ink-600 transition-colors hover:text-ink-950 sm:inline md:order-3 dark:text-ink-300 dark:hover:text-white"
                         x-data="{ count: {{ $__pendingCount }} }"
                         x-init="setInterval(() => {
                             fetch('{{ route('bookings.poll') }}', { headers: { Accept: 'application/json' } })
@@ -54,11 +72,11 @@
                         ></span>
                     </a>
                 @else
-                    <a href="{{ url('/admin') }}" class="hidden text-sm font-medium text-ink-600 transition-colors hover:text-ink-950 sm:inline dark:text-ink-300 dark:hover:text-white">Dashboard</a>
+                    <a href="{{ url('/admin') }}" class="hidden text-sm font-medium text-ink-600 transition-colors hover:text-ink-950 sm:inline md:order-3 dark:text-ink-300 dark:hover:text-white">Dashboard</a>
                 @endif
 
                 {{-- Account menu: hamburger on mobile, name + avatar on desktop --}}
-                <div class="relative" x-data="{ open: false }" @click.outside="open = false" @keydown.escape.window="open = false">
+                <div class="relative md:order-5" x-data="{ open: false }" @click.outside="open = false" @keydown.escape.window="open = false">
                     <button
                         type="button"
                         @click="open = !open"
@@ -81,6 +99,10 @@
                     >
                         <a href="{{ url('/') }}" class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-ink-700 hover:bg-ink-50 dark:text-ink-300 dark:hover:bg-ink-800">
                             <i class="ph ph-house text-base"></i> Home
+                        </a>
+
+                        <a href="{{ route('open-play.index') }}" class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-ink-700 hover:bg-ink-50 dark:text-ink-300 dark:hover:bg-ink-800">
+                            <i class="ph ph-users-three text-base"></i> Open Play
                         </a>
 
                         @if (auth()->user()->isCustomer())
@@ -108,7 +130,7 @@
                     </div>
                 </div>
             @else
-                <a href="{{ route('login') }}" class="hidden text-sm font-medium text-ink-600 transition-colors hover:text-ink-950 sm:inline dark:text-ink-300 dark:hover:text-white">Log in</a>
+                <a href="{{ route('login') }}" class="hidden text-sm font-medium text-ink-600 transition-colors hover:text-ink-950 sm:inline md:order-3 dark:text-ink-300 dark:hover:text-white">Log in</a>
             @endauth
         </div>
     </nav>

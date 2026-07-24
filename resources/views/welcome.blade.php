@@ -47,16 +47,23 @@
 
         <div class="relative mx-auto max-w-7xl px-4 pt-14 pb-16 sm:px-6 md:pb-20 lg:px-8">
             <div class="max-w-xl">
-                <span class="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-ink-300">
-                    <i class="ph ph-map-pin text-accent-400"></i>
-                    Riverside strip, Manila
-                </span>
+                @if ($mapLabel)
+                    <span class="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-ink-300">
+                        <i class="ph ph-map-pin text-accent-400"></i>
+                        {{ $mapLabel }}
+                    </span>
+                @endif
 
                 <h1 class="mt-4 font-display text-4xl font-semibold tracking-tight text-white md:text-5xl lg:text-6xl">
                     Book Your Perfect<br><span class="text-accent-400">Pickleball Court</span>
                 </h1>
                 <p class="mt-5 max-w-md text-base leading-relaxed text-ink-300">
-                    Choose from three outdoor courts. <span class="font-semibold text-white">View real-time availability</span> at a glance, pay by GCash, and go.
+                    @if ($activeCourtsCount > 1)
+                        Choose from {{ $activeCourtsCount }} outdoor courts.
+                    @else
+                        Book our outdoor court.
+                    @endif
+                    <span class="font-semibold text-white">View real-time availability</span> at a glance, pay by GCash, and go.
                 </p>
                 <div class="mt-8 flex flex-wrap items-center gap-3">
                     <a href="#availability" class="inline-flex items-center gap-2 rounded-full bg-accent-500 px-6 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.98] hover:bg-accent-400">
@@ -110,7 +117,7 @@
         </div>
     </section>
 
-    {{-- Rebooking / weather policy reminder --}}
+    {{-- Rescheduling / weather policy reminder --}}
     <section class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div class="flex flex-col items-start gap-4 rounded-3xl border border-ink-100 bg-white p-6 shadow-[0_1px_2px_rgba(24,24,27,0.04)] sm:flex-row sm:items-center sm:p-7 dark:border-ink-800 dark:bg-ink-900">
             <span class="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent-50 text-accent-600 dark:bg-accent-950 dark:text-accent-400">
@@ -120,7 +127,7 @@
             <div>
                 <p class="font-display text-base font-semibold text-ink-950 dark:text-white">Rained out? We've got you.</p>
                 <p class="mt-1 text-sm leading-relaxed text-ink-500 dark:text-ink-400">
-                    Our courts are open-air, so rebooking only applies when weather cancels your session. Any other reschedule, just get in touch.
+                    Our courts are open-air, so rescheduling only applies when weather cancels your session. For anything else, just get in touch.
                 </p>
             </div>
         </div>

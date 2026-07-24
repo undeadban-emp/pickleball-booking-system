@@ -2,13 +2,17 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Booking extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'booking_code',
         'user_id',
@@ -16,7 +20,9 @@ class Booking extends Model
         'guest_phone',
         'guest_email',
         'court_id',
-        'rebooked_from_id',
+        'rescheduled_from_id',
+        'split_from_booking_id',
+        'booking_order_id',
         'status',
         'total_price',
         'payment_method_id',
@@ -60,23 +66,67 @@ class Booking extends Model
     /**
      * The earlier booking this one replaces (e.g. rained out and rescheduled)
      * - no new money changes hands, it's a continuation of the same payment.
+     * Legacy: reschedules now update the same booking in place (see
+     * rescheduleLogs() below) instead of creating a new row, so this only
+     * ever points at something for bookings rescheduled before that change.
      */
-    public function rebookedFrom(): BelongsTo
+    public function rescheduledFrom(): BelongsTo
     {
-        return $this->belongsTo(Booking::class, 'rebooked_from_id');
+        return $this->belongsTo(Booking::class, 'rescheduled_from_id');
     }
 
     /**
-     * The booking this one was rescheduled into, if any.
+     * The booking this one was rescheduled into, if any. Legacy, see
+     * rescheduledFrom() above.
      */
-    public function rebookedTo(): HasMany
+    public function rescheduledTo(): HasMany
     {
-        return $this->hasMany(Booking::class, 'rebooked_from_id');
+        return $this->hasMany(Booking::class, 'rescheduled_from_id');
+    }
+
+    /**
+     * History of in-place reschedules (e.g. rained out, moved to a new
+     * date/time) - the booking keeps its id/booking_code/status throughout,
+     * this is just a log of where it used to be and where it moved to.
+     */
+    public function rescheduleLogs(): HasMany
+    {
+        return $this->hasMany(BookingRescheduleLog::class)->orderBy('created_at');
+    }
+
+    /**
+     * The booking a remainder piece was split off from, when a partial
+     * reschedule moves only some of a booking's hours (e.g. only the
+     * rained-out middle hour of an 8-11am booking) and the untouched hours
+     * split into their own sibling booking row that keeps its original
+     * date/time. See BookingService::splitAndReschedule().
+     */
+    public function splitFrom(): BelongsTo
+    {
+        return $this->belongsTo(Booking::class, 'split_from_booking_id');
+    }
+
+    /**
+     * Sibling booking(s) split off from this one, if any. See splitFrom()
+     * above.
+     */
+    public function splitSiblings(): HasMany
+    {
+        return $this->hasMany(Booking::class, 'split_from_booking_id');
     }
 
     public function paymentMethod(): BelongsTo
     {
         return $this->belongsTo(PaymentMethod::class);
+    }
+
+    /**
+     * The multi-session order this booking was created as part of, if any -
+     * see BookingOrder for the "one payment, several sessions" flow.
+     */
+    public function bookingOrder(): BelongsTo
+    {
+        return $this->belongsTo(BookingOrder::class);
     }
 
     public function reviewedBy(): BelongsTo
@@ -102,6 +152,14 @@ class Booking extends Model
     public function matches(): HasMany
     {
         return $this->hasMany(GameMatch::class);
+    }
+
+    /**
+     * The Open Play room this booking's court/timeframe was opened into, if any.
+     */
+    public function openPlayRoomCourt(): HasOne
+    {
+        return $this->hasOne(OpenPlayRoomCourt::class);
     }
 
     public function hasMatch(): bool

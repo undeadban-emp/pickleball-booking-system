@@ -3,7 +3,7 @@
     <section
         class="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8"
         :class="selectedSlots.length > 0 ? 'pb-24' : ''"
-        x-data="bookingCalendar({ courtId: {{ $court->id }}, slotsUrl: '{{ url('/api/courts/'.$court->id.'/slots') }}', periodBoundaries: @js($periodBoundaries) })"
+        x-data="bookingCalendar({ courtId: {{ $court->id }}, slotsUrl: '{{ url('/api/courts/'.$court->id.'/slots') }}', periodBoundaries: @js($periodBoundaries), periodEnds: @js($periodEnds) })"
     >
         <a href="{{ route('book.index') }}" class="inline-flex items-center gap-1.5 text-sm font-medium text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-white">
             <i class="ph ph-arrow-left"></i>
@@ -42,12 +42,18 @@
                                 x-show="cell"
                                 :disabled="cell && cell.isPast"
                                 @click="cell && selectDate(cell.dateStr, cell.isPast)"
-                                class="aspect-square cursor-pointer rounded-xl text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:text-ink-300 dark:disabled:text-ink-700"
+                                class="relative aspect-square cursor-pointer rounded-xl text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:text-ink-300 dark:disabled:text-ink-700"
                                 :class="cell && selectedDateStr === cell.dateStr
                                     ? 'bg-accent-500 text-ink-950'
                                     : (cell && cell.isToday ? 'border border-accent-400 text-ink-900 dark:text-white' : 'text-ink-700 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800')"
-                                x-text="cell ? cell.day : ''"
-                            ></button>
+                            >
+                                <span x-text="cell ? cell.day : ''"></span>
+                                <span
+                                    x-show="cell && cell.hasPick && selectedDateStr !== cell.dateStr"
+                                    x-cloak
+                                    class="absolute bottom-1 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-accent-500"
+                                ></span>
+                            </button>
                         </template>
                     </div>
                 </div>
@@ -76,7 +82,7 @@
                         <div>
                             <div class="flex items-center justify-between gap-2">
                                 <p class="text-sm font-medium text-ink-800 dark:text-ink-200">
-                                    Tap a start time, then an end time to select a block.
+                                    Tap any times you'd like to book — non-contiguous picks become separate bookings under one payment.
                                 </p>
                                 <span class="flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-ink-400 dark:text-ink-500">
                                     <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500"></span>
@@ -141,17 +147,22 @@
                         </div>
                     </div>
 
-                    <div x-show="showQuickDetails" x-cloak x-transition class="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-black/10 px-4 py-3">
-                        <p class="min-w-0 truncate text-sm text-white">
-                            <span class="font-semibold">{{ $court->name }}</span>
-                            <span class="text-white/70">&middot;</span>
-                            <span x-text="selectedDateLabel"></span>
-                            <span class="text-white/70">&middot;</span>
-                            <span x-text="formatTime(selectedSlots[0].start_time) + '–' + formatTime(selectedSlots[selectedSlots.length - 1].end_time)"></span>
-                        </p>
-                        <button type="button" @click="clearSelection()" class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/10 hover:text-white" aria-label="Clear selection">
-                            <i class="ph ph-x text-sm"></i>
-                        </button>
+                    <div x-show="showQuickDetails" x-cloak x-transition class="mt-3 rounded-2xl bg-black/10 px-4 py-3">
+                        <div class="flex items-center justify-between gap-3">
+                            <p class="min-w-0 truncate text-sm text-white">
+                                <span class="font-semibold">{{ $court->name }}</span>
+                                <span class="text-white/70">&middot;</span>
+                                <span x-text="selectedGroups.length"></span> booking<span x-show="selectedGroups.length > 1">s</span>
+                            </p>
+                            <button type="button" @click="clearSelection()" class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/10 hover:text-white" aria-label="Clear selection">
+                                <i class="ph ph-x text-sm"></i>
+                            </button>
+                        </div>
+                        <div class="mt-1.5 space-y-0.5">
+                            <template x-for="(group, i) in selectedGroups" :key="i">
+                                <p class="text-xs text-white/80" x-text="dateLabelFor(group[0].slot_date) + ', ' + formatTime(group[0].start_time) + '–' + formatTime(group[group.length - 1].end_time)"></p>
+                            </template>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -174,7 +185,7 @@
                     <div class="flex items-start justify-between rounded-t-3xl bg-ink-950 p-5">
                         <div>
                             <p class="font-display text-lg font-semibold text-white">Complete Your Booking</p>
-                            <p class="text-sm text-ink-300">{{ $court->name }}</p>
+                            <p class="text-sm text-ink-300"><span x-text="selectedGroups.length"></span> booking<span x-show="selectedGroups.length > 1">s</span> &middot; {{ $court->name }}</p>
                         </div>
                         <button type="button" @click="showReserveSheet = false" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20" aria-label="Close">
                             <i class="ph ph-x text-lg"></i>
@@ -188,24 +199,30 @@
                         </template>
 
                         <div class="overflow-hidden rounded-2xl border border-ink-100 dark:border-ink-800">
-                            <div class="flex items-start justify-between gap-3 bg-accent-50 px-4 py-3 dark:bg-accent-950">
-                                <div>
-                                    <p class="text-sm font-semibold text-ink-950 dark:text-white">
-                                        {{ $court->name }} &middot; <span x-text="selectedSlots.length"></span>h
-                                    </p>
-                                    <p class="text-xs text-ink-500 dark:text-ink-400">
-                                        <span x-text="selectedDateLabel"></span> &middot;
-                                        <span x-text="formatTime(selectedSlots[0].start_time)"></span> to
-                                        <span x-text="formatTime(selectedSlots[selectedSlots.length - 1].end_time)"></span>
-                                    </p>
+                            <template x-for="(group, i) in selectedGroups" :key="i">
+                                <div class="flex items-start justify-between gap-3 bg-accent-50 px-4 py-3 dark:bg-accent-950" :class="i > 0 && 'border-t border-accent-100 dark:border-accent-900'">
+                                    <div>
+                                        <p class="text-sm font-semibold text-ink-950 dark:text-white">
+                                            {{ $court->name }} &middot; <span x-text="group.length"></span>h
+                                        </p>
+                                        <p class="text-xs text-ink-500 dark:text-ink-400">
+                                            <span x-text="dateLabelFor(group[0].slot_date)"></span> &middot;
+                                            <span x-text="formatTime(group[0].start_time)"></span> to
+                                            <span x-text="formatTime(group[group.length - 1].end_time)"></span>
+                                        </p>
+                                    </div>
+                                    <p class="shrink-0 font-mono text-sm font-semibold text-ink-950 dark:text-white">₱<span x-text="group.reduce((sum, s) => sum + parseFloat(s.price), 0).toFixed(2)"></span></p>
                                 </div>
-                                <p class="shrink-0 font-mono text-sm font-semibold text-ink-950 dark:text-white">₱<span x-text="totalPrice.toFixed(2)"></span></p>
-                            </div>
+                            </template>
                             <div class="flex items-center justify-between border-t border-ink-100 bg-white px-4 py-3 dark:border-ink-800 dark:bg-ink-900">
                                 <p class="text-xs font-semibold tracking-wide text-accent-700 uppercase dark:text-accent-400">Total</p>
                                 <p class="font-display text-lg font-semibold text-ink-950 dark:text-white">₱<span x-text="totalPrice.toFixed(2)"></span></p>
                             </div>
                         </div>
+
+                        <template x-if="selectedGroups.length > 1">
+                            <p class="mt-3 text-xs text-ink-500 dark:text-ink-400">These will be booked as <span x-text="selectedGroups.length"></span> separate bookings, covered by one payment.</p>
+                        </template>
 
                         @guest
                             <div class="mt-5">

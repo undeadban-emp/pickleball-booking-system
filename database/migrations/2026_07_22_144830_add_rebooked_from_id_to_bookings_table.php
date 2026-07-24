@@ -13,7 +13,9 @@ return new class extends Migration
     {
         Schema::table('bookings', function (Blueprint $table) {
             // Self-referencing: which earlier booking (if any) this one was
-            // created from via the admin "Rebook this customer" flow.
+            // created from via the admin "Reschedule this customer" flow.
+            // (Column later renamed to rescheduled_from_id - see the
+            // 2026_07_27 migration - this file is left as originally run.)
             $table->foreignId('rebooked_from_id')->nullable()->after('court_id')->constrained('bookings')->nullOnDelete();
         });
     }

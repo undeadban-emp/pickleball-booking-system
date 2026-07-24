@@ -1,6 +1,16 @@
 @php
     $__brandSettings = \App\Models\OperatingHours::current();
-    $__pendingBookingsCount = \App\Models\Booking::where('status', 'pending_payment')->count();
+    // Representative bookings only, so a multi-session order pending
+    // review badges as 1 item to act on - not one per session, which
+    // would overcount relative to what the bookings list actually shows.
+    $__pendingBookingsCount = \App\Models\Booking::where('status', 'pending_payment')
+        ->where(function ($q) {
+            $q->whereNull('booking_order_id')
+                ->orWhereIn('id', function ($sub) {
+                    $sub->selectRaw('MIN(id)')->from('bookings')->whereNotNull('booking_order_id')->groupBy('booking_order_id');
+                });
+        })
+        ->count();
 
     $navItem = function (string $routeName, string $label, string $icon, ?int $badge = null) {
         $active = request()->routeIs($routeName.'*');
@@ -25,7 +35,8 @@
         $navItem('admin.dashboard', 'Dashboard', 'ph-squares-four'),
         $navItem('admin.bookings.index', 'Bookings', 'ph-calendar-check', $__pendingBookingsCount),
         $navItem('admin.bookings.schedule', 'Day Schedule', 'ph-calendar-blank'),
-        $navItem('admin.checkin.index', 'Check-in', 'ph-qr-code'),
+        // Hidden for now - re-add when check-in is ready to surface again.
+        // $navItem('admin.checkin.index', 'Check-in', 'ph-qr-code'),
     ]);
 
     if (auth()->user()->isAdmin()) {
@@ -33,6 +44,7 @@
         $items->push($navItem('admin.payment-methods.index', 'Payment methods', 'ph-credit-card'));
         $items->push($navItem('admin.hero-images.index', 'Hero images', 'ph-image'));
         $items->push($navItem('admin.gallery-images.index', 'Album', 'ph-images-square'));
+        $items->push($navItem('admin.users.index', 'Users', 'ph-users'));
         $items->push($navGroup('Settings', 'ph-gear-six', [
             ['routeName' => 'admin.settings.edit', 'label' => 'General'],
             ['routeName' => 'admin.settings.hours', 'label' => 'Time-of-day Groups'],

@@ -3,7 +3,17 @@
         'admin' => 'bg-accent-100 text-accent-800 dark:bg-accent-900 dark:text-accent-200',
         default => 'bg-ink-200 text-ink-700 dark:bg-ink-800 dark:text-ink-300',
     };
-    $__pendingBookingsCount = \App\Models\Booking::where('status', 'pending_payment')->count();
+    // Representative bookings only, so a multi-session order pending
+    // review badges as 1 item to act on - not one per session, which
+    // would overcount relative to what the bookings list actually shows.
+    $__pendingBookingsCount = \App\Models\Booking::where('status', 'pending_payment')
+        ->where(function ($q) {
+            $q->whereNull('booking_order_id')
+                ->orWhereIn('id', function ($sub) {
+                    $sub->selectRaw('MIN(id)')->from('bookings')->whereNotNull('booking_order_id')->groupBy('booking_order_id');
+                });
+        })
+        ->count();
 @endphp
 
 <header class="flex h-16 items-center justify-between gap-4 border-b border-ink-200 bg-white px-4 sm:px-6 lg:px-8 dark:border-ink-800 dark:bg-ink-900">

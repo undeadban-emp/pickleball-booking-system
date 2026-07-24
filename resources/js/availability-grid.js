@@ -1,6 +1,6 @@
 import { startPolling } from './poll';
 
-export default function availabilityGrid({ availabilityUrl, isAuthenticated, periodBoundaries }) {
+export default function availabilityGrid({ availabilityUrl, isAuthenticated, periodBoundaries, periodEnds }) {
     const pad = (n) => String(n).padStart(2, '0');
     const toDateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     const toMinutes = (hhmm) => {
@@ -18,13 +18,12 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
         afternoon: { label: 'Afternoon', icon: 'ph-cloud-sun' },
         evening: { label: 'Evening', icon: 'ph-moon' },
     };
-    // Sort period keys by their start time, ascending. Any time before the
-    // earliest boundary wraps around to belong to the LAST period in this
-    // order, since that period runs past midnight into the next morning.
+    // Sort period keys by their start time, ascending.
     const orderedKeys = Object.keys(boundaries).sort((a, b) => toMinutes(boundaries[a]) - toMinutes(boundaries[b]));
+    const ends = periodEnds || { morning: boundaries.afternoon, afternoon: boundaries.evening, evening: '00:00' };
 
     const periodForMinutes = (minutes) => {
-        let match = orderedKeys[orderedKeys.length - 1];
+        let match = null;
         for (const key of orderedKeys) {
             if (toMinutes(boundaries[key]) <= minutes) {
                 match = key;
@@ -32,6 +31,20 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
                 break;
             }
         }
+
+        if (!match) {
+            // Nothing matched - this time is before the first configured
+            // boundary (e.g. 6am when Morning starts at 11am). Only call it
+            // spillover from the last period (Evening) if that period
+            // actually wraps past midnight and this time falls within the
+            // wrapped range; otherwise it's just early/before opening, so
+            // show it with the first period instead of mislabeling it.
+            const lastKey = orderedKeys[orderedKeys.length - 1];
+            const lastEnd = toMinutes(ends[lastKey]);
+            const wrapsPastMidnight = lastEnd <= toMinutes(boundaries[lastKey]);
+            match = wrapsPastMidnight && minutes < lastEnd ? lastKey : orderedKeys[0];
+        }
+
         return { key: match, ...periodMeta[match] };
     };
 
@@ -64,8 +77,14 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
         warning: null,
 
         selectedCourtId: null,
-        rangeStart: null,
-        rangeEnd: null,
+        // Picks persist across date switches, keyed by slot id, so a
+        // customer can pick times on one date, browse to another, and pick
+        // more there without losing what they already picked - they're
+        // building one multi-date booking, not restarting per date. Each
+        // entry carries its own slot_date and court since the availability
+        // response doesn't include the date (it's implied by the date that
+        // was requested).
+        pickedSlots: {},
         showReserveSheet: false,
         showQuickDetails: false,
 
@@ -97,7 +116,13 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
 
         selectDate(dateStr) {
             this.selectedDateStr = dateStr;
-            this.clearSelection();
+            // Intentionally not touching pickedSlots here - switching dates
+            // is just browsing to a different day's availability, not
+            // discarding what was already picked on other days. The
+            // reserve sheet/quick-details panel are closed since they were
+            // anchored to whatever was on screen a moment ago.
+            this.showReserveSheet = false;
+            this.showQuickDetails = false;
             this.fetchAvailability();
         },
 
@@ -245,25 +270,32 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
         },
 
         // Background refresh: silent, no loading spinner. If a slot this
-        // visitor already picked just got taken by someone else, drop the
-        // selection and warn instead of letting them submit a doomed booking.
+        // visitor already picked just got taken by someone else, drop just
+        // that pick and warn instead of letting them submit a doomed
+        // booking. Only reconciles picks on the date currently being viewed
+        // - this fetch doesn't know about other dates' availability, so
+        // picks made there must be left alone.
         async refreshAvailability() {
             if (this.loading) return;
 
             try {
                 const courts = await this.loadAvailability();
-                const previousSelectedIds = this.selectedSlotIds;
-
                 this.applyAvailability(courts);
 
-                if (previousSelectedIds.length) {
-                    const stillSelectable = previousSelectedIds.every((id) => {
-                        const slot = this.selectedCourt?.slots.find((s) => s.id === id);
-                        return slot && slot.status === 'available';
-                    });
+                const idsForThisDate = Object.values(this.pickedSlots).filter((s) => s.slot_date === this.selectedDateStr);
 
-                    if (!stillSelectable) {
-                        this.clearSelection();
+                if (idsForThisDate.length) {
+                    const lostIds = idsForThisDate
+                        .filter((picked) => {
+                            const slot = this.selectedCourt?.slots.find((s) => s.id === picked.id);
+                            return !slot || slot.status !== 'available';
+                        })
+                        .map((picked) => picked.id);
+
+                    if (lostIds.length) {
+                        lostIds.forEach((id) => delete this.pickedSlots[id]);
+                        this.showReserveSheet = false;
+                        this.showQuickDetails = false;
                         this.warning = 'One or more of your selected slots were just booked by someone else. Please pick again.';
                     }
                 }
@@ -276,56 +308,44 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
             return court.slots.find((s) => s.start_time === time) ?? null;
         },
 
-        cellIndex(court, time) {
-            return court.slots.findIndex((s) => s.start_time === time);
-        },
-
+        // Independent checkbox-style selection, scoped to one court at a
+        // time (across every date picked, not just the one on screen):
+        // clicking any available slot toggles just that slot, no auto-fill
+        // of the range between two clicks. Non-contiguous picks are valid -
+        // each contiguous run becomes its own booking under one combined
+        // payment, see selectedGroups() below. Picking a slot on a
+        // different court than the current selection clears and restarts on
+        // the new court (cross-court checkout isn't supported).
         pickCell(court, time) {
             const slot = this.slotFor(court, time);
             if (!slot || slot.status !== 'available') return;
 
-            const index = this.cellIndex(court, time);
-
             if (this.selectedCourtId !== court.id) {
                 this.selectedCourtId = court.id;
-                this.rangeStart = index;
-                this.rangeEnd = index;
+                this.pickedSlots = { [slot.id]: { ...slot, slot_date: this.selectedDateStr, courtName: court.name } };
                 return;
             }
 
-            if (index === this.rangeStart && index === this.rangeEnd) {
-                this.clearSelection();
-                return;
-            }
-
-            const lo = Math.min(this.rangeStart, index);
-            const hi = Math.max(this.rangeStart, index);
-            const between = court.slots.slice(lo, hi + 1);
-            const contiguous = between.every((s, i) => {
-                if (i === 0) return true;
-                if (s.status !== 'available') return false;
-                return between[i - 1].end_time === s.start_time;
-            });
-
-            if (contiguous) {
-                this.rangeStart = lo;
-                this.rangeEnd = hi;
+            if (this.pickedSlots[slot.id]) {
+                delete this.pickedSlots[slot.id];
             } else {
-                this.rangeStart = index;
-                this.rangeEnd = index;
+                this.pickedSlots[slot.id] = { ...slot, slot_date: this.selectedDateStr, courtName: court.name };
+            }
+
+            if (Object.keys(this.pickedSlots).length === 0) {
+                this.clearSelection();
             }
         },
 
         isSelected(court, time) {
-            if (this.selectedCourtId !== court.id || this.rangeStart === null) return false;
-            const index = this.cellIndex(court, time);
-            return index >= this.rangeStart && index <= this.rangeEnd;
+            if (this.selectedCourtId !== court.id) return false;
+            const slot = this.slotFor(court, time);
+            return !!slot && !!this.pickedSlots[slot.id];
         },
 
         clearSelection() {
             this.selectedCourtId = null;
-            this.rangeStart = null;
-            this.rangeEnd = null;
+            this.pickedSlots = {};
             this.showReserveSheet = false;
             this.showQuickDetails = false;
         },
@@ -334,13 +354,57 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
             return this.courts.find((c) => c.id === this.selectedCourtId) ?? null;
         },
 
+        // Sorted across every date the customer has picked on, not just the
+        // one currently being viewed.
         get selectedSlots() {
-            if (!this.selectedCourt || this.rangeStart === null) return [];
-            return this.selectedCourt.slots.slice(this.rangeStart, this.rangeEnd + 1);
+            return Object.values(this.pickedSlots).sort((a, b) => {
+                if (a.slot_date !== b.slot_date) return a.slot_date < b.slot_date ? -1 : 1;
+                return a.start_time < b.start_time ? -1 : 1;
+            });
         },
 
         get selectedSlotIds() {
             return this.selectedSlots.map((s) => s.id);
+        },
+
+        // Client-side mirror of BookingService::groupContiguousSlotIds() -
+        // preview only, the server re-derives this as the authoritative
+        // version. Also splits on a date change, since two picks on
+        // different dates must never merge into one run even if their
+        // clock times line up.
+        get selectedGroups() {
+            const groups = [];
+
+            for (const slot of this.selectedSlots) {
+                const last = groups[groups.length - 1];
+                const lastSlot = last ? last[last.length - 1] : null;
+
+                if (lastSlot && lastSlot.slot_date === slot.slot_date && lastSlot.end_time === slot.start_time) {
+                    last.push(slot);
+                } else {
+                    groups.push([slot]);
+                }
+            }
+
+            return groups;
+        },
+
+        // Whether any currently-picked slot falls on the given date - drives
+        // the small dot shown on date-strip/calendar cells so it's clear at
+        // a glance which other days already have picks.
+        hasPickOn(dateStr) {
+            return Object.values(this.pickedSlots).some((s) => s.slot_date === dateStr);
+        },
+
+        // Formats an arbitrary date string for display - used per group
+        // now that a booking can span more than one date.
+        dateLabelFor(dateStr) {
+            const [y, m, d] = dateStr.split('-').map(Number);
+            return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+            });
         },
 
         get totalPrice() {

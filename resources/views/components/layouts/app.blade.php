@@ -4,13 +4,12 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
+        <meta name="csrf-token" content="{{ csrf_token() }}">
 
         <title>{{ $title ?? config('app.name') }}</title>
         <meta name="description" content="{{ $description ?? 'Book pickleball courts by the hour. Pick a time, pay by GCash, show your code at the door.' }}">
 
         @fonts
-
-        <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
