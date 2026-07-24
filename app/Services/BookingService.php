@@ -102,7 +102,7 @@ class BookingService
         return $booking;
     }
 
-    public function submitGcashReference(Booking $booking, string $reference, ?string $proofPath = null, ?int $paymentMethodId = null): Booking
+    public function submitGcashReference(Booking $booking, ?string $reference, ?string $proofPath = null, ?int $paymentMethodId = null): Booking
     {
         if ($booking->status !== 'pending_payment') {
             throw new InvalidBookingTransitionException($booking->status, 'submit a payment reference for');
@@ -110,7 +110,7 @@ class BookingService
 
         $booking->update([
             'payment_method_id' => $paymentMethodId ?? $booking->payment_method_id,
-            'gcash_reference' => $reference,
+            'gcash_reference' => $reference ?? $booking->gcash_reference,
             'payment_proof_path' => $proofPath ?? $booking->payment_proof_path,
             'gcash_submitted_at' => now(),
         ]);
@@ -172,13 +172,15 @@ class BookingService
 
     public function cancel(Booking $booking, ?User $actor, ?string $reason = null): Booking
     {
-        if (! in_array($booking->status, ['pending_payment', 'confirmed'], true)) {
+        if (! in_array($booking->status, ['pending_payment', 'confirmed', 'on_hold'], true)) {
             throw new InvalidBookingTransitionException($booking->status, 'cancelled');
         }
 
         return DB::transaction(function () use ($booking, $actor, $reason) {
             $fromStatus = $booking->status;
 
+            // A no-op for an on_hold booking - it already has no attached
+            // slots to free, they were freed the moment it went on hold.
             CourtSlot::whereIn('id', $booking->slots()->pluck('court_slots.id'))
                 ->update(['status' => 'available']);
 
@@ -187,6 +189,13 @@ class BookingService
                 'cancelled_at' => now(),
                 'cancellation_reason' => $reason,
             ]);
+
+            if ($fromStatus === 'on_hold') {
+                $booking->holds()->whereNull('resolved_at')->update([
+                    'resolved_at' => now(),
+                    'resolved_by' => $actor?->id,
+                ]);
+            }
 
             $this->logStatus($booking, $fromStatus, 'cancelled', $actor, $reason);
 
@@ -198,9 +207,11 @@ class BookingService
      * Auto-release bookings that have sat unpaid past the admin's configured
      * payment hold window - frees the slot back to available for everyone
      * else, same as a manual cancel, just triggered by the clock instead of
-     * a person. Only bookings with no GCash reference yet are eligible - once
-     * a customer has submitted one, it's awaiting admin review, not the
-     * customer's payment, so it must not be auto-cancelled out from under them.
+     * a person. Only bookings with no GCash reference AND no proof yet are
+     * eligible - once a customer has submitted either one, it's awaiting
+     * admin review, not the customer's payment, so it must not be
+     * auto-cancelled out from under them. The reference is optional (proof
+     * is the required field), so a proof-only submission must count too.
      *
      * $onlyDate scopes the sweep to bookings touching one slot_date, for cheap
      * on-read expiry from a specific date's availability endpoint - the full,
@@ -213,6 +224,7 @@ class BookingService
 
         $query = Booking::where('status', 'pending_payment')
             ->whereNull('gcash_reference')
+            ->whereNull('payment_proof_path')
             // Order-linked bookings are expired as a unit by
             // BookingOrderService::expireStalePending() instead, so the
             // order's own status/timestamps stay in sync with its children.
@@ -240,7 +252,7 @@ class BookingService
      */
     public function expireBookingIfStale(Booking $booking, int $holdMinutes): Booking
     {
-        if ($booking->status !== 'pending_payment' || $booking->gcash_reference) {
+        if ($booking->status !== 'pending_payment' || $booking->hasSubmittedPayment()) {
             return $booking;
         }
 
@@ -430,72 +442,10 @@ class BookingService
 
             // Every piece resulting from this split (the moved booking plus
             // any remainder siblings) needs to be one purchase, so they all
-            // end up under one order - reuse the existing one if $booking
-            // already has one, otherwise create it now.
-            $order = $booking->bookingOrder;
-            if (! $order) {
-                $order = BookingOrder::create([
-                    'receipt_token' => Str::random(40),
-                    'user_id' => $booking->user_id,
-                    'guest_name' => $booking->guest_name,
-                    'guest_phone' => $booking->guest_phone,
-                    'guest_email' => $booking->guest_email,
-                    'total_price' => $booking->total_price,
-                    'status' => $booking->status,
-                    'payment_method_id' => $booking->payment_method_id,
-                    'gcash_reference' => $booking->gcash_reference,
-                    'payment_proof_path' => $booking->payment_proof_path,
-                    'gcash_submitted_at' => $booking->gcash_submitted_at,
-                    'payment_reviewed_by' => $booking->payment_reviewed_by,
-                    'payment_reviewed_at' => $booking->payment_reviewed_at,
-                ]);
-                $booking->update(['booking_order_id' => $order->id]);
-            }
+            // end up under one order.
+            $order = $this->ensureOrder($booking);
 
-            $remainderBookings = collect();
-
-            foreach ($remainderGroups as $group) {
-                $groupSlots = $booking->slots()->whereIn('court_slots.id', $group)->orderBy('start_time')->get();
-                $lastSlot = $groupSlots->last();
-
-                $sibling = Booking::create([
-                    'booking_code' => $this->generateBookingCode(),
-                    'user_id' => $booking->user_id,
-                    'guest_name' => $booking->guest_name,
-                    'guest_phone' => $booking->guest_phone,
-                    'guest_email' => $booking->guest_email,
-                    'court_id' => $booking->court_id,
-                    'booking_order_id' => $order->id,
-                    'status' => $booking->status,
-                    'total_price' => $groupSlots->sum('price'),
-                    'receipt_token' => Str::random(40),
-                    'payment_method_id' => $booking->payment_method_id,
-                    'gcash_reference' => $booking->gcash_reference,
-                    'payment_proof_path' => $booking->payment_proof_path,
-                    'gcash_submitted_at' => $booking->gcash_submitted_at,
-                    'payment_reviewed_by' => $booking->payment_reviewed_by,
-                    'payment_reviewed_at' => $booking->payment_reviewed_at,
-                    'split_from_booking_id' => $booking->id,
-                ]);
-
-                // Slots aren't moving, just changing which booking owns
-                // them - stays `booked` throughout, no re-lock needed.
-                $booking->slots()->detach($group);
-                $sibling->slots()->attach($group);
-
-                if ($booking->status === 'confirmed') {
-                    $sibling->update([
-                        'checkin_token' => Str::random(40),
-                        'checkin_token_expires_at' => $lastSlot
-                            ? $lastSlot->slot_date->clone()->setTimeFromTimeString($lastSlot->end_time)
-                            : null,
-                    ]);
-                }
-
-                $this->logStatus($sibling, null, $sibling->status, $admin, "Split off from {$booking->booking_code} — kept at its original time");
-
-                $remainderBookings->push($sibling->fresh(['slots', 'court']));
-            }
+            $remainderBookings = $this->splitRemainderIntoSiblings($booking, $remainderGroups, $order, $admin);
 
             // $booking->slots() now holds only the affected slots (remainder
             // groups were detached above) - reschedule those, same shape as
@@ -536,6 +486,267 @@ class BookingService
                 'remainder' => $remainderBookings,
             ];
         });
+    }
+
+    /**
+     * Puts some or all of a confirmed booking's hours on hold (e.g. rain hit
+     * the last 2 hours of a 4-hour booking) - the held hours' CourtSlot rows
+     * are freed back to available for other customers immediately, and this
+     * booking (or, for a partial hold, the piece left holding just those
+     * hours after the untouched remainder splits off into sibling rows the
+     * same way splitAndReschedule() does) moves to status on_hold with zero
+     * attached slots, pending the admin picking a new date/time for it via
+     * resolveHold() below. Restricted to already-confirmed bookings only -
+     * an unpaid booking put on hold and later resolved back to
+     * pending_payment could become instantly eligible for the payment-expiry
+     * sweep with no grace period, since created_at never moves while held.
+     *
+     * @param  array<int>  $slotIdsToHold  subset of $booking's own slot ids, one contiguous block
+     */
+    public function holdSlots(Booking $booking, array $slotIdsToHold, User $admin, ?string $reason = null): Booking
+    {
+        if ($booking->status !== 'confirmed') {
+            throw new InvalidBookingTransitionException($booking->status, 'put on hold');
+        }
+
+        if ($booking->openPlayRoomCourt()->exists()) {
+            throw new InvalidBookingTransitionException($booking->status, 'put on hold (linked to an Open Play room)');
+        }
+
+        $allSlots = $booking->slots()->orderBy('start_time')->get();
+
+        $heldSlots = $allSlots->whereIn('id', $slotIdsToHold)->values();
+
+        if ($heldSlots->count() !== count($slotIdsToHold)) {
+            throw new SlotUnavailableException('One or more selected hours are not part of this booking.');
+        }
+
+        if ($heldSlots->isEmpty()) {
+            throw new \InvalidArgumentException('Select at least one hour to hold.');
+        }
+
+        $remainingIds = $allSlots->pluck('id')->diff($heldSlots->pluck('id'))->values()->all();
+        $remainderGroups = $this->groupContiguousSlotIds($remainingIds);
+
+        return DB::transaction(function () use ($booking, $heldSlots, $admin, $reason, $remainderGroups) {
+            if (! empty($remainderGroups)) {
+                $order = $this->ensureOrder($booking);
+                $this->splitRemainderIntoSiblings($booking, $remainderGroups, $order, $admin);
+            }
+
+            // $booking->slots() now holds only the to-be-held slots
+            // (remainder groups, if any, were detached above).
+            $first = $heldSlots->first();
+            $last = $heldSlots->last();
+
+            CourtSlot::whereIn('id', $heldSlots->pluck('id'))->update(['status' => 'available']);
+            $booking->slots()->detach();
+
+            $booking->update([
+                'status' => 'on_hold',
+                'total_price' => 0,
+                'checkin_token_expires_at' => null,
+            ]);
+
+            $booking->holds()->create([
+                'from_court_id' => $first->court_id,
+                'from_slot_date' => $first->slot_date,
+                'from_start_time' => $first->start_time,
+                'from_end_time' => $last->end_time,
+                'previous_status' => 'confirmed',
+                'reason' => $reason,
+                'held_by' => $admin->id,
+            ]);
+
+            $this->logStatus($booking, 'confirmed', 'on_hold', $admin, $reason);
+
+            if ($booking->bookingOrder) {
+                $booking->bookingOrder->update(['total_price' => $booking->bookingOrder->bookings()->sum('total_price')]);
+            }
+
+            return $booking->fresh(['slots', 'court', 'holds']);
+        });
+    }
+
+    /**
+     * Moves a held booking (see holdSlots() above) to a new date/time,
+     * restoring it to the status it had before the hold. Can't reuse
+     * rescheduleBooking() as-is - that throws when the booking has no
+     * current slots, which an on_hold booking always has by design.
+     *
+     * @param  array<int>  $newCourtSlotIds
+     */
+    public function resolveHold(Booking $booking, Court $newCourt, array $newCourtSlotIds, User $admin, ?string $reason = null): Booking
+    {
+        if ($booking->status !== 'on_hold') {
+            throw new InvalidBookingTransitionException($booking->status, 'rescheduled');
+        }
+
+        return DB::transaction(function () use ($booking, $newCourt, $newCourtSlotIds, $admin, $reason) {
+            // Locked and re-checked here (rather than only before the
+            // transaction) since, unlike every other mutation in this
+            // service, there's no CourtSlot row lock to fall back on for
+            // double-submit protection - the booking has none attached
+            // while on hold.
+            $hold = $booking->holds()->whereNull('resolved_at')->lockForUpdate()->first();
+
+            if (! $hold) {
+                throw new InvalidBookingTransitionException($booking->status, 'rescheduled (no active hold found)');
+            }
+
+            $newSlots = CourtSlot::query()
+                ->whereIn('id', $newCourtSlotIds)
+                ->where('court_id', $newCourt->id)
+                ->lockForUpdate()
+                ->orderBy('start_time')
+                ->get();
+
+            if ($newSlots->count() !== count($newCourtSlotIds)) {
+                throw new SlotUnavailableException;
+            }
+
+            $this->assertContiguous($newSlots);
+
+            if ($newSlots->contains(fn (CourtSlot $slot) => ! $slot->isAvailable())) {
+                throw new SlotUnavailableException;
+            }
+
+            $newFirst = $newSlots->first();
+            $newLast = $newSlots->last();
+
+            $booking->slots()->attach($newSlots->pluck('id'));
+            CourtSlot::whereIn('id', $newSlots->pluck('id'))->update(['status' => 'booked']);
+
+            $booking->update([
+                'status' => $hold->previous_status,
+                'court_id' => $newCourt->id,
+                'total_price' => $newSlots->sum('price'),
+            ]);
+
+            if ($hold->previous_status === 'confirmed') {
+                $booking->update([
+                    'checkin_token_expires_at' => $newLast->slot_date->clone()->setTimeFromTimeString($newLast->end_time),
+                ]);
+            }
+
+            $booking->rescheduleLogs()->create([
+                'from_court_id' => $hold->from_court_id,
+                'from_slot_date' => $hold->from_slot_date,
+                'from_start_time' => $hold->from_start_time,
+                'from_end_time' => $hold->from_end_time,
+                'to_court_id' => $newCourt->id,
+                'to_slot_date' => $newFirst->slot_date,
+                'to_start_time' => $newFirst->start_time,
+                'to_end_time' => $newLast->end_time,
+                'changed_by' => $admin->id,
+                'reason' => $reason,
+            ]);
+
+            $hold->update(['resolved_at' => now(), 'resolved_by' => $admin->id]);
+
+            $this->logStatus($booking, 'on_hold', $hold->previous_status, $admin, $reason);
+
+            if ($booking->bookingOrder) {
+                $booking->bookingOrder->update(['total_price' => $booking->bookingOrder->bookings()->sum('total_price')]);
+            }
+
+            return $booking->fresh(['slots', 'court', 'rescheduleLogs']);
+        });
+    }
+
+    /**
+     * Reuses $booking's existing BookingOrder if it has one, otherwise wraps
+     * it in a fresh one - used whenever a booking is about to produce
+     * sibling rows (split-reschedule, hold) that need to share one purchase.
+     */
+    protected function ensureOrder(Booking $booking): BookingOrder
+    {
+        $order = $booking->bookingOrder;
+
+        if ($order) {
+            return $order;
+        }
+
+        $order = BookingOrder::create([
+            'receipt_token' => Str::random(40),
+            'user_id' => $booking->user_id,
+            'guest_name' => $booking->guest_name,
+            'guest_phone' => $booking->guest_phone,
+            'guest_email' => $booking->guest_email,
+            'total_price' => $booking->total_price,
+            'status' => $booking->status,
+            'payment_method_id' => $booking->payment_method_id,
+            'gcash_reference' => $booking->gcash_reference,
+            'payment_proof_path' => $booking->payment_proof_path,
+            'gcash_submitted_at' => $booking->gcash_submitted_at,
+            'payment_reviewed_by' => $booking->payment_reviewed_by,
+            'payment_reviewed_at' => $booking->payment_reviewed_at,
+        ]);
+        $booking->update(['booking_order_id' => $order->id]);
+
+        return $order;
+    }
+
+    /**
+     * Splits each contiguous remainder group of $booking's own slots off
+     * into its own sibling Booking row - own id/booking_code/receipt_token,
+     * but copied customer/payment details, kept at their original time and
+     * status. Used by splitAndReschedule() (remainder stays put, the
+     * affected part moves) and holdSlots() (remainder stays put, the held
+     * part goes on hold) - both need exactly this, just for a different
+     * reason on the part that isn't the remainder.
+     *
+     * @param  array<int, array<int>>  $remainderGroups
+     * @return \Illuminate\Support\Collection<int, Booking>
+     */
+    protected function splitRemainderIntoSiblings(Booking $booking, array $remainderGroups, BookingOrder $order, ?User $admin): \Illuminate\Support\Collection
+    {
+        $remainderBookings = collect();
+
+        foreach ($remainderGroups as $group) {
+            $groupSlots = $booking->slots()->whereIn('court_slots.id', $group)->orderBy('start_time')->get();
+            $lastSlot = $groupSlots->last();
+
+            $sibling = Booking::create([
+                'booking_code' => $this->generateBookingCode(),
+                'user_id' => $booking->user_id,
+                'guest_name' => $booking->guest_name,
+                'guest_phone' => $booking->guest_phone,
+                'guest_email' => $booking->guest_email,
+                'court_id' => $booking->court_id,
+                'booking_order_id' => $order->id,
+                'status' => $booking->status,
+                'total_price' => $groupSlots->sum('price'),
+                'receipt_token' => Str::random(40),
+                'payment_method_id' => $booking->payment_method_id,
+                'gcash_reference' => $booking->gcash_reference,
+                'payment_proof_path' => $booking->payment_proof_path,
+                'gcash_submitted_at' => $booking->gcash_submitted_at,
+                'payment_reviewed_by' => $booking->payment_reviewed_by,
+                'payment_reviewed_at' => $booking->payment_reviewed_at,
+                'split_from_booking_id' => $booking->id,
+            ]);
+
+            // Slots aren't moving, just changing which booking owns
+            // them - stays `booked` throughout, no re-lock needed.
+            $booking->slots()->detach($group);
+            $sibling->slots()->attach($group);
+
+            if ($booking->status === 'confirmed') {
+                $sibling->update([
+                    'checkin_token' => Str::random(40),
+                    'checkin_token_expires_at' => $lastSlot
+                        ? $lastSlot->slot_date->clone()->setTimeFromTimeString($lastSlot->end_time)
+                        : null,
+                ]);
+            }
+
+            $this->logStatus($sibling, null, $sibling->status, $admin, "Split off from {$booking->booking_code} — kept at its original time");
+
+            $remainderBookings->push($sibling->fresh(['slots', 'court']));
+        }
+
+        return $remainderBookings;
     }
 
     /**

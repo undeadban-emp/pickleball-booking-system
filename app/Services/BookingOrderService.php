@@ -75,7 +75,7 @@ class BookingOrderService
         });
     }
 
-    public function submitGcashReference(BookingOrder $order, string $reference, ?string $proofPath = null, ?int $paymentMethodId = null): BookingOrder
+    public function submitGcashReference(BookingOrder $order, ?string $reference, ?string $proofPath = null, ?int $paymentMethodId = null): BookingOrder
     {
         if ($order->status !== 'pending_payment') {
             throw new InvalidBookingTransitionException($order->status, 'submit a payment reference for');
@@ -83,7 +83,7 @@ class BookingOrderService
 
         $attributes = [
             'payment_method_id' => $paymentMethodId ?? $order->payment_method_id,
-            'gcash_reference' => $reference,
+            'gcash_reference' => $reference ?? $order->gcash_reference,
             'payment_proof_path' => $proofPath ?? $order->payment_proof_path,
             'gcash_submitted_at' => now(),
         ];
@@ -185,6 +185,7 @@ class BookingOrderService
 
         $stale = BookingOrder::where('status', 'pending_payment')
             ->whereNull('gcash_reference')
+            ->whereNull('payment_proof_path')
             ->where('created_at', '<=', $cutoff)
             ->get();
 
@@ -214,7 +215,7 @@ class BookingOrderService
 
     public function expireOrderIfStale(BookingOrder $order, int $holdMinutes): BookingOrder
     {
-        if ($order->status !== 'pending_payment' || $order->gcash_reference) {
+        if ($order->status !== 'pending_payment' || $order->hasSubmittedPayment()) {
             return $order;
         }
 

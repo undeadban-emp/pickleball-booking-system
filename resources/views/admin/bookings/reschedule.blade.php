@@ -3,6 +3,24 @@
     @php
         $currentFirst = $booking->slots->sortBy('start_time')->first();
         $currentLast = $booking->slots->sortBy('start_time')->last();
+
+        // A held booking has zero attached slots (they were freed the
+        // moment it went on hold), so slots->count() below would always be
+        // 0 - which the JS form treats as "no limit", silently disabling
+        // the "you're picking more hours than before" warning entirely.
+        // Recover the real hour count from the active hold instead.
+        $activeHold = $booking->status === 'on_hold' ? $booking->holds->first() : null;
+
+        if ($activeHold) {
+            $holdStart = \Illuminate\Support\Carbon::parse($activeHold->from_slot_date->format('Y-m-d').' '.$activeHold->from_start_time);
+            $holdEnd = \Illuminate\Support\Carbon::parse($activeHold->from_slot_date->format('Y-m-d').' '.$activeHold->from_end_time);
+            if ($holdEnd->lessThanOrEqualTo($holdStart)) {
+                $holdEnd->addDay();
+            }
+            $expectedHours = $holdStart->diffInHours($holdEnd);
+        } else {
+            $expectedHours = $booking->slots->count();
+        }
     @endphp
 
     <div class="flex flex-wrap items-center justify-between gap-3">
@@ -38,6 +56,14 @@
                     <p class="text-xs text-ink-500 dark:text-ink-400">{{ \Illuminate\Support\Carbon::parse($currentFirst->start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($currentLast->end_time)->format('g:i A') }}</p>
                 </div>
             </div>
+        @elseif ($activeHold)
+            <div class="ml-auto flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 dark:bg-amber-950/40">
+                <i class="ph ph-pause-circle text-amber-500"></i>
+                <div>
+                    <p class="text-sm font-semibold text-amber-800 dark:text-amber-300">On hold since {{ $activeHold->from_slot_date->format('D, M j, Y') }}</p>
+                    <p class="text-xs text-amber-700 dark:text-amber-400">was {{ \Illuminate\Support\Carbon::parse($activeHold->from_start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($activeHold->from_end_time)->format('g:i A') }} ({{ $expectedHours }}h)</p>
+                </div>
+            </div>
         @endif
     </div>
 
@@ -62,7 +88,7 @@
             periodBoundaries: @js($periodBoundaries),
             periodEnds: @js($periodEnds),
             initialCourtId: {{ $booking->court_id }},
-            expectedHours: {{ $booking->slots->count() }},
+            expectedHours: {{ $expectedHours }},
             singleSession: true,
             bookingSlots: @js($booking->slots->sortBy('start_time')->values()->map(fn ($s) => ['id' => $s->id, 'start_time' => $s->start_time, 'end_time' => $s->end_time])),
         })"
@@ -70,35 +96,7 @@
         @csrf
 
         <div class="space-y-4">
-            @if ($booking->slots->count() > 1)
-                <div class="rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
-                    <p class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-400 uppercase">
-                        <i class="ph ph-selection-slash text-sm"></i> Which hours were affected?
-                    </p>
-                    <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">Leave unselected to move the whole session. Tap just the affected hour(s) to move only those — the rest stays booked as-is.</p>
-
-                    <div class="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
-                        <template x-for="slot in allBookingSlots" :key="slot.id">
-                            <button
-                                type="button"
-                                @click="toggleAffected(slot.id)"
-                                class="rounded-lg border px-2 py-2.5 text-xs font-semibold transition-all"
-                                :class="affected[slot.id] ? 'border-rose-500 bg-rose-500 text-white shadow-sm scale-[1.02]' : 'border-ink-200 bg-ink-50 text-ink-600 hover:border-rose-300 hover:bg-rose-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300'"
-                                x-text="slotLabel(slot)"
-                            ></button>
-                        </template>
-                    </div>
-
-                    <p x-show="isPartial" x-cloak class="mt-3 flex items-center gap-1.5 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:bg-rose-950 dark:text-rose-300">
-                        <i class="ph ph-info"></i>
-                        Only the <span x-text="affectedIds.length"></span> selected hour(s) will move — the rest stays on this booking untouched.
-                    </p>
-
-                    <template x-for="id in affectedIds" :key="'affected-' + id">
-                        <input type="hidden" name="affected_court_slot_ids[]" :value="id">
-                    </template>
-                </div>
-            @endif
+            @include('admin.bookings.partials.affected-hours-picker', ['booking' => $booking, 'verb' => 'move'])
 
             <div class="rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
                 <p class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-400 uppercase">

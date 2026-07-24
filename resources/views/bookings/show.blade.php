@@ -1,6 +1,6 @@
 @php
     $statusMeta = match ($booking->status) {
-        'pending_payment' => $booking->gcash_reference
+        'pending_payment' => $booking->hasSubmittedPayment()
             ? ['label' => 'Awaiting confirmation', 'icon' => 'ph-clock-countdown', 'classes' => 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300']
             : ['label' => 'Awaiting payment', 'icon' => 'ph-clock-countdown', 'classes' => 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'],
         'confirmed' => ['label' => 'Confirmed', 'icon' => 'ph-check-circle', 'classes' => 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'],
@@ -8,11 +8,23 @@
         'cancelled' => ['label' => 'Cancelled', 'icon' => 'ph-prohibit', 'classes' => 'bg-ink-200 text-ink-600 dark:bg-ink-800 dark:text-ink-400'],
         'completed' => ['label' => 'Completed', 'icon' => 'ph-flag-checkered', 'classes' => 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'],
         'no_show' => ['label' => 'No show', 'icon' => 'ph-x-circle', 'classes' => 'bg-ink-200 text-ink-600 dark:bg-ink-800 dark:text-ink-400'],
+        'on_hold' => ['label' => 'Temporarily on hold', 'icon' => 'ph-pause-circle', 'classes' => 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'],
         default => ['label' => $booking->status, 'icon' => 'ph-info', 'classes' => 'bg-ink-200 text-ink-600 dark:bg-ink-800 dark:text-ink-400'],
     };
-    // Once a payment reference has been submitted, the customer has already paid,
-    // so self-service cancellation is no longer offered from this point onward.
-    $canCancel = $booking->status === 'pending_payment' && ! $booking->gcash_reference;
+    // Once a payment reference or proof has been submitted, the customer has
+    // already paid, so self-service cancellation is no longer offered from
+    // this point onward.
+    $canCancel = $booking->status === 'pending_payment' && ! $booking->hasSubmittedPayment();
+
+    // A held booking has zero attached slots (freed the moment it went on
+    // hold), so the Schedule field below would otherwise just go blank -
+    // this recovers what time was held so the customer isn't left guessing.
+    $activeHold = $booking->status === 'on_hold' ? $booking->holds->first() : null;
+
+    // Most recent in-place move, if any - shown so a customer whose time
+    // changed (rain, held then resolved) can see exactly what changed
+    // instead of just noticing the date is suddenly different.
+    $lastReschedule = $booking->rescheduleLogs->sortByDesc('created_at')->first();
 @endphp
 
 <x-layouts.app :title="'Booking '.$booking->booking_code" :hide-footer="true">
@@ -23,7 +35,7 @@
             x-data="{
                 statusUrl: '{{ route('booking.public.status', $booking->receipt_token) }}',
                 knownStatus: '{{ $booking->status }}',
-                knownHasReference: {{ $booking->gcash_reference ? 'true' : 'false' }},
+                knownHasReference: {{ $booking->hasSubmittedPayment() ? 'true' : 'false' }},
                 poll() {
                     fetch(this.statusUrl, { headers: { Accept: 'application/json' } })
                         .then(res => res.ok ? res.json() : null)
@@ -36,7 +48,7 @@
                         .catch(() => {});
                 }
             }"
-            x-init="setInterval(() => poll(), {{ $booking->gcash_reference ? 15000 : 20000 }})"
+            x-init="setInterval(() => poll(), {{ $booking->hasSubmittedPayment() ? 15000 : 20000 }})"
         @endif
     >
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -48,7 +60,7 @@
             @else
                 <a href="{{ url('/') }}" class="inline-flex items-center gap-1.5 text-sm font-medium text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-white">
                     <i class="ph ph-arrow-left"></i>
-                    Kitchen Line
+                    {{ \App\Models\OperatingHours::current()->brand_text }}
                 </a>
             @endauth
 
@@ -116,11 +128,37 @@
                         <div class="flex items-start justify-between gap-4">
                             <dt class="shrink-0 text-ink-500 dark:text-ink-400">Schedule</dt>
                             <dd class="text-right font-medium text-ink-900 dark:text-ink-100">
-                                @foreach ($booking->slots->sortBy('start_time') as $slot)
-                                    <div>{{ \Illuminate\Support\Carbon::parse($slot->slot_date)->format('M j, Y') }}, {{ \Illuminate\Support\Carbon::parse($slot->start_time)->format('g:i A') }} to {{ \Illuminate\Support\Carbon::parse($slot->end_time)->format('g:i A') }}</div>
-                                @endforeach
+                                @forelse ($booking->slots->sortBy('start_time') as $slot)
+                                    <div class="flex items-center justify-end gap-2">
+                                        <span>{{ \Illuminate\Support\Carbon::parse($slot->slot_date)->format('M j, Y') }}, {{ \Illuminate\Support\Carbon::parse($slot->start_time)->format('g:i A') }} to {{ \Illuminate\Support\Carbon::parse($slot->end_time)->format('g:i A') }}</span>
+                                        @if ($booking->status === 'on_hold')
+                                            <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300">On hold</span>
+                                        @endif
+                                    </div>
+                                @empty
+                                    @if ($activeHold)
+                                        <div class="flex items-center justify-end gap-2">
+                                            <span>{{ $activeHold->from_slot_date->format('M j, Y') }}, {{ \Illuminate\Support\Carbon::parse($activeHold->from_start_time)->format('g:i A') }} to {{ \Illuminate\Support\Carbon::parse($activeHold->from_end_time)->format('g:i A') }}</span>
+                                            <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300">On hold</span>
+                                        </div>
+                                    @endif
+                                @endforelse
                             </dd>
                         </div>
+                        @if ($activeHold)
+                            <div class="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                                <i class="ph ph-pause-circle mr-1 align-[-2px]"></i>
+                                Your time above is temporarily on hold{{ $activeHold->reason ? " ({$activeHold->reason})" : '' }} and has been released back to the schedule. We'll update this page with your new time as soon as it's rebooked.
+                            </div>
+                        @endif
+                        @if ($lastReschedule)
+                            <div class="rounded-xl bg-accent-50 px-3 py-2 text-xs text-accent-800 dark:bg-accent-950 dark:text-accent-300">
+                                <i class="ph ph-arrow-clockwise mr-1 align-[-2px]"></i>
+                                Moved from {{ $lastReschedule->from_slot_date->format('M j, Y') }}, {{ \Illuminate\Support\Carbon::parse($lastReschedule->from_start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($lastReschedule->from_end_time)->format('g:i A') }}
+                                to {{ $lastReschedule->to_slot_date->format('M j, Y') }}, {{ \Illuminate\Support\Carbon::parse($lastReschedule->to_start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($lastReschedule->to_end_time)->format('g:i A') }}
+                                — no new payment needed.
+                            </div>
+                        @endif
                         <div class="flex items-center justify-between gap-4">
                             <dt class="text-ink-500 dark:text-ink-400">{{ $booking->isGuestBooking() ? 'Guest' : 'Customer' }}</dt>
                             <dd class="font-medium text-ink-900 dark:text-ink-100">{{ $booking->contactName() }}</dd>
@@ -163,13 +201,13 @@
                         </span>
                         <div>
                             <p class="font-display text-base font-semibold text-ink-950 dark:text-white">{{ $statusMeta['label'] }}</p>
-                            @if ($booking->status === 'pending_payment' && ! $booking->gcash_reference)
+                            @if ($booking->status === 'pending_payment' && ! $booking->hasSubmittedPayment())
                                 <p class="text-xs text-ink-500 dark:text-ink-400">Complete payment to confirm your booking.</p>
                             @endif
                         </div>
                     </div>
 
-                    @if ($booking->status === 'pending_payment' && ! $booking->gcash_reference)
+                    @if ($booking->status === 'pending_payment' && ! $booking->hasSubmittedPayment())
                         <div
                             x-data="{
                                 deadline: new Date('{{ $booking->created_at->copy()->addMinutes($paymentHoldMinutes)->toIso8601String() }}').getTime(),
@@ -193,7 +231,7 @@
                     @endif
                 </div>
 
-                @if ($booking->status === 'pending_payment' && ! $booking->gcash_reference)
+                @if ($booking->status === 'pending_payment' && ! $booking->hasSubmittedPayment())
                     <div
                         x-data="{
                             step: {{ $errors->hasAny(['gcash_reference', 'proof_of_payment']) ? 3 : ($paymentMethods->count() > 1 ? 1 : 2) }},
@@ -213,7 +251,7 @@
                                         <div class="flex items-center gap-2">
                                             <span
                                                 class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors"
-                                                :class="step >= index + 1 ? 'bg-accent-500 text-ink-950' : 'bg-ink-100 text-ink-400 dark:bg-ink-800'"
+                                                :class="step >= index + 1 ? 'bg-accent-500 text-white' : 'bg-ink-100 text-ink-400 dark:bg-ink-800'"
                                                 x-text="index + 1"
                                             ></span>
                                             <span class="hidden text-sm font-medium sm:inline" :class="step === index + 1 ? 'text-ink-950 dark:text-white' : 'text-ink-400'" x-text="label"></span>
@@ -286,12 +324,11 @@
                                     @csrf
                                     <input type="hidden" name="payment_method_id" :value="selectedId">
                                     <div class="flex flex-col gap-2">
-                                    <label for="gcash_reference" class="text-sm font-medium text-ink-800 dark:text-ink-200">GCash reference number</label>
+                                    <label for="gcash_reference" class="text-sm font-medium text-ink-800 dark:text-ink-200">GCash reference number <span class="font-normal text-ink-400">(optional)</span></label>
                                     <input
                                         id="gcash_reference"
                                         type="text"
                                         name="gcash_reference"
-                                        required
                                         value="{{ old('gcash_reference') }}"
                                         class="w-full rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm text-ink-950 placeholder:text-ink-400 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-white dark:focus:ring-accent-900"
                                         placeholder="e.g. 0123456789012"
@@ -302,12 +339,13 @@
                                 </div>
 
                                 <div class="flex flex-col gap-2">
-                                    <label for="proof_of_payment" class="text-sm font-medium text-ink-800 dark:text-ink-200">Proof of payment <span class="font-normal text-ink-400">(optional, speeds up review)</span></label>
+                                    <label for="proof_of_payment" class="text-sm font-medium text-ink-800 dark:text-ink-200">Proof of payment</label>
                                     <input
                                         id="proof_of_payment"
                                         type="file"
                                         name="proof_of_payment"
                                         accept="image/*"
+                                        required
                                         class="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm text-ink-950 file:mr-3 file:rounded-md file:border-0 file:bg-ink-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-ink-700 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-white dark:file:bg-ink-800 dark:file:text-ink-200"
                                     >
                                     <p class="text-xs text-ink-400">A screenshot of your GCash receipt.</p>
@@ -320,7 +358,7 @@
                                     <button type="button" @click="step = 2" class="flex-1 rounded-full border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:border-ink-400 dark:border-ink-700 dark:text-ink-200">
                                         Back
                                     </button>
-                                    <button type="submit" class="flex-1 rounded-full bg-accent-500 px-4 py-2.5 text-sm font-semibold text-ink-950 transition-transform active:scale-[0.98] hover:bg-accent-400">
+                                    <button type="submit" class="flex-1 rounded-full bg-accent-500 px-4 py-2.5 text-sm font-semibold text-white transition-transform active:scale-[0.98] hover:bg-accent-400">
                                         Submit reference
                                     </button>
                                 </div>
@@ -328,7 +366,7 @@
                             </div>
                         @endif
                     </div>
-                @elseif ($booking->status === 'pending_payment' && $booking->gcash_reference)
+                @elseif ($booking->status === 'pending_payment' && $booking->hasSubmittedPayment())
                     <div class="mt-4 rounded-2xl border border-ink-100 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
                         <p class="text-sm text-ink-600 dark:text-ink-400">
                             We are checking your payment now and will confirm shortly.
@@ -337,23 +375,25 @@
                             @endif
                         </p>
 
-                        <div
-                            x-data="{ copied: false, copy() { navigator.clipboard.writeText('{{ $booking->gcash_reference }}'); this.copied = true; setTimeout(() => this.copied = false, 2000); } }"
-                            class="mt-3 flex items-center justify-between rounded-xl bg-ink-100/60 px-4 py-3 dark:bg-ink-800/60"
-                        >
-                            <div>
-                                <p class="text-xs text-ink-500 dark:text-ink-400">GCash reference</p>
-                                <p class="font-mono text-sm text-ink-900 dark:text-ink-100">{{ $booking->gcash_reference }}</p>
+                        @if ($booking->gcash_reference)
+                            <div
+                                x-data="{ copied: false, copy() { navigator.clipboard.writeText('{{ $booking->gcash_reference }}'); this.copied = true; setTimeout(() => this.copied = false, 2000); } }"
+                                class="mt-3 flex items-center justify-between rounded-xl bg-ink-100/60 px-4 py-3 dark:bg-ink-800/60"
+                            >
+                                <div>
+                                    <p class="text-xs text-ink-500 dark:text-ink-400">GCash reference</p>
+                                    <p class="font-mono text-sm text-ink-900 dark:text-ink-100">{{ $booking->gcash_reference }}</p>
+                                </div>
+                                <button type="button" @click="copy()" class="flex shrink-0 items-center gap-1.5 rounded-full border border-ink-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink-700 transition-colors hover:border-accent-400 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200">
+                                    <i class="ph" :class="copied ? 'ph-check text-accent-600 dark:text-accent-400' : 'ph-copy'"></i>
+                                    <span x-text="copied ? 'Copied' : 'Copy'"></span>
+                                </button>
                             </div>
-                            <button type="button" @click="copy()" class="flex shrink-0 items-center gap-1.5 rounded-full border border-ink-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink-700 transition-colors hover:border-accent-400 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200">
-                                <i class="ph" :class="copied ? 'ph-check text-accent-600 dark:text-accent-400' : 'ph-copy'"></i>
-                                <span x-text="copied ? 'Copied' : 'Copy'"></span>
-                            </button>
-                        </div>
 
-                        <p class="mt-3 text-xs text-ink-500 dark:text-ink-400">
-                            Keep this reference in case you need to follow up with us about this payment.
-                        </p>
+                            <p class="mt-3 text-xs text-ink-500 dark:text-ink-400">
+                                Keep this reference in case you need to follow up with us about this payment.
+                            </p>
+                        @endif
 
                         @if ($booking->paymentProofUrl())
                             <div class="mt-4" x-data="{ lightbox: false, zoomed: false }">

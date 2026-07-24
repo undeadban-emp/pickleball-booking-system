@@ -1,6 +1,6 @@
 @php
     $statusMeta = match ($order->status) {
-        'pending_payment' => $order->gcash_reference
+        'pending_payment' => $order->hasSubmittedPayment()
             ? ['label' => 'Awaiting confirmation', 'icon' => 'ph-clock-countdown', 'classes' => 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300']
             : ['label' => 'Awaiting payment', 'icon' => 'ph-clock-countdown', 'classes' => 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'],
         'confirmed' => ['label' => 'Confirmed', 'icon' => 'ph-check-circle', 'classes' => 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'],
@@ -8,7 +8,7 @@
         'cancelled' => ['label' => 'Cancelled', 'icon' => 'ph-prohibit', 'classes' => 'bg-ink-200 text-ink-600 dark:bg-ink-800 dark:text-ink-400'],
         default => ['label' => $order->status, 'icon' => 'ph-info', 'classes' => 'bg-ink-200 text-ink-600 dark:bg-ink-800 dark:text-ink-400'],
     };
-    $canCancel = $order->status === 'pending_payment' && ! $order->gcash_reference;
+    $canCancel = $order->status === 'pending_payment' && ! $order->hasSubmittedPayment();
 @endphp
 
 <x-layouts.app :title="'Booking order '.$order->id" :hide-footer="true">
@@ -19,7 +19,7 @@
             x-data="{
                 statusUrl: '{{ route('order.public.status', $order->receipt_token) }}',
                 knownStatus: '{{ $order->status }}',
-                knownHasReference: {{ $order->gcash_reference ? 'true' : 'false' }},
+                knownHasReference: {{ $order->hasSubmittedPayment() ? 'true' : 'false' }},
                 poll() {
                     fetch(this.statusUrl, { headers: { Accept: 'application/json' } })
                         .then(res => res.ok ? res.json() : null)
@@ -32,13 +32,13 @@
                         .catch(() => {});
                 }
             }"
-            x-init="setInterval(() => poll(), {{ $order->gcash_reference ? 15000 : 20000 }})"
+            x-init="setInterval(() => poll(), {{ $order->hasSubmittedPayment() ? 15000 : 20000 }})"
         @endif
     >
         <div class="flex flex-wrap items-center justify-between gap-3">
             <a href="{{ auth()->check() ? route('bookings.index') : url('/') }}" class="inline-flex items-center gap-1.5 text-sm font-medium text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-white">
                 <i class="ph ph-arrow-left"></i>
-                {{ auth()->check() ? 'My bookings' : 'Kitchen Line' }}
+                {{ auth()->check() ? 'My bookings' : \App\Models\OperatingHours::current()->brand_text }}
             </a>
 
             @if ($canCancel)
@@ -97,14 +97,30 @@
                             @php
                                 $firstSlot = $booking->slots->sortBy('start_time')->first();
                                 $lastSlot = $booking->slots->sortBy('start_time')->last();
-                                $dateLine = $firstSlot ? \Illuminate\Support\Carbon::parse($firstSlot->slot_date)->format('M j, Y') : '';
-                                $timeLine = $firstSlot ? \Illuminate\Support\Carbon::parse($firstSlot->start_time)->format('g:i A').' to '.\Illuminate\Support\Carbon::parse($lastSlot->end_time)->format('g:i A') : '';
+                                $activeHold = $booking->status === 'on_hold' ? $booking->holds->first() : null;
+                                $lastReschedule = $booking->rescheduleLogs->sortByDesc('created_at')->first();
+
+                                if ($firstSlot) {
+                                    $dateLine = \Illuminate\Support\Carbon::parse($firstSlot->slot_date)->format('M j, Y');
+                                    $timeLine = \Illuminate\Support\Carbon::parse($firstSlot->start_time)->format('g:i A').' to '.\Illuminate\Support\Carbon::parse($lastSlot->end_time)->format('g:i A');
+                                } elseif ($activeHold) {
+                                    $dateLine = $activeHold->from_slot_date->format('M j, Y');
+                                    $timeLine = \Illuminate\Support\Carbon::parse($activeHold->from_start_time)->format('g:i A').' to '.\Illuminate\Support\Carbon::parse($activeHold->from_end_time)->format('g:i A');
+                                } else {
+                                    $dateLine = '';
+                                    $timeLine = '';
+                                }
                             @endphp
                             <div class="rounded-xl border border-ink-100 dark:border-ink-800" x-data="{ open: false }">
                                 <button type="button" @click="open = !open" class="flex w-full items-center justify-between gap-3 p-3 text-left text-sm">
                                     <div class="min-w-0">
                                         <p class="truncate font-medium text-ink-900 dark:text-ink-100">{{ $booking->court->name }}</p>
-                                        <p class="text-xs text-ink-500 dark:text-ink-400">{{ $dateLine }}, {{ $timeLine }}</p>
+                                        <p class="text-xs text-ink-500 dark:text-ink-400">
+                                            {{ $dateLine }}, {{ $timeLine }}
+                                            @if ($booking->status === 'on_hold')
+                                                <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300">On hold</span>
+                                            @endif
+                                        </p>
                                     </div>
                                     <div class="flex shrink-0 items-center gap-2">
                                         <span class="font-mono text-xs text-ink-500 dark:text-ink-400">₱{{ number_format($booking->total_price, 2) }}</span>
@@ -121,6 +137,18 @@
                                         <p class="text-xs text-rose-600 dark:text-rose-400">This session's payment was not confirmed.</p>
                                     @elseif ($booking->status === 'cancelled')
                                         <p class="text-xs text-ink-500 dark:text-ink-400">This session was cancelled.</p>
+                                    @elseif ($booking->status === 'on_hold')
+                                        <p class="text-xs text-amber-700 dark:text-amber-400">
+                                            Temporarily on hold{{ $activeHold?->reason ? " ({$activeHold->reason})" : '' }} and released back to the schedule. We'll update this once it's rebooked.
+                                        </p>
+                                    @endif
+
+                                    @if ($lastReschedule)
+                                        <p class="mt-2 text-xs text-accent-700 dark:text-accent-400">
+                                            Moved from {{ $lastReschedule->from_slot_date->format('M j, Y') }}, {{ \Illuminate\Support\Carbon::parse($lastReschedule->from_start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($lastReschedule->from_end_time)->format('g:i A') }}
+                                            to {{ $lastReschedule->to_slot_date->format('M j, Y') }}, {{ \Illuminate\Support\Carbon::parse($lastReschedule->to_start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($lastReschedule->to_end_time)->format('g:i A') }}
+                                            — no new payment needed.
+                                        </p>
                                     @endif
                                 </div>
                             </div>
@@ -147,13 +175,13 @@
                         </span>
                         <div>
                             <p class="font-display text-base font-semibold text-ink-950 dark:text-white">{{ $statusMeta['label'] }}</p>
-                            @if ($order->status === 'pending_payment' && ! $order->gcash_reference)
+                            @if ($order->status === 'pending_payment' && ! $order->hasSubmittedPayment())
                                 <p class="text-xs text-ink-500 dark:text-ink-400">Complete payment to confirm all sessions above.</p>
                             @endif
                         </div>
                     </div>
 
-                    @if ($order->status === 'pending_payment' && ! $order->gcash_reference)
+                    @if ($order->status === 'pending_payment' && ! $order->hasSubmittedPayment())
                         <div
                             x-data="{
                                 deadline: new Date('{{ $order->created_at->copy()->addMinutes($paymentHoldMinutes)->toIso8601String() }}').getTime(),
@@ -177,7 +205,7 @@
                     @endif
                 </div>
 
-                @if ($order->status === 'pending_payment' && ! $order->gcash_reference)
+                @if ($order->status === 'pending_payment' && ! $order->hasSubmittedPayment())
                     <div
                         x-data="{
                             step: {{ $errors->hasAny(['gcash_reference', 'proof_of_payment']) ? 3 : ($paymentMethods->count() > 1 ? 1 : 2) }},
@@ -196,7 +224,7 @@
                                         <div class="flex items-center gap-2">
                                             <span
                                                 class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors"
-                                                :class="step >= index + 1 ? 'bg-accent-500 text-ink-950' : 'bg-ink-100 text-ink-400 dark:bg-ink-800'"
+                                                :class="step >= index + 1 ? 'bg-accent-500 text-white' : 'bg-ink-100 text-ink-400 dark:bg-ink-800'"
                                                 x-text="index + 1"
                                             ></span>
                                             <span class="hidden text-sm font-medium sm:inline" :class="step === index + 1 ? 'text-ink-950 dark:text-white' : 'text-ink-400'" x-text="label"></span>
@@ -266,12 +294,11 @@
                                     @csrf
                                     <input type="hidden" name="payment_method_id" :value="selectedId">
                                     <div class="flex flex-col gap-2">
-                                        <label for="gcash_reference" class="text-sm font-medium text-ink-800 dark:text-ink-200">GCash reference number</label>
+                                        <label for="gcash_reference" class="text-sm font-medium text-ink-800 dark:text-ink-200">GCash reference number <span class="font-normal text-ink-400">(optional)</span></label>
                                         <input
                                             id="gcash_reference"
                                             type="text"
                                             name="gcash_reference"
-                                            required
                                             value="{{ old('gcash_reference') }}"
                                             class="w-full rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm text-ink-950 placeholder:text-ink-400 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-white dark:focus:ring-accent-900"
                                             placeholder="e.g. 0123456789012"
@@ -282,12 +309,13 @@
                                     </div>
 
                                     <div class="flex flex-col gap-2">
-                                        <label for="proof_of_payment" class="text-sm font-medium text-ink-800 dark:text-ink-200">Proof of payment <span class="font-normal text-ink-400">(optional, speeds up review)</span></label>
+                                        <label for="proof_of_payment" class="text-sm font-medium text-ink-800 dark:text-ink-200">Proof of payment</label>
                                         <input
                                             id="proof_of_payment"
                                             type="file"
                                             name="proof_of_payment"
                                             accept="image/*"
+                                            required
                                             class="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm text-ink-950 file:mr-3 file:rounded-md file:border-0 file:bg-ink-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-ink-700 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-white dark:file:bg-ink-800 dark:file:text-ink-200"
                                         >
                                         <p class="text-xs text-ink-400">A screenshot of your GCash receipt.</p>
@@ -300,7 +328,7 @@
                                         <button type="button" @click="step = 2" class="flex-1 rounded-full border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:border-ink-400 dark:border-ink-700 dark:text-ink-200">
                                             Back
                                         </button>
-                                        <button type="submit" class="flex-1 rounded-full bg-accent-500 px-4 py-2.5 text-sm font-semibold text-ink-950 transition-transform active:scale-[0.98] hover:bg-accent-400">
+                                        <button type="submit" class="flex-1 rounded-full bg-accent-500 px-4 py-2.5 text-sm font-semibold text-white transition-transform active:scale-[0.98] hover:bg-accent-400">
                                             Submit reference
                                         </button>
                                     </div>
@@ -308,17 +336,19 @@
                             </div>
                         @endif
                     </div>
-                @elseif ($order->status === 'pending_payment' && $order->gcash_reference)
+                @elseif ($order->status === 'pending_payment' && $order->hasSubmittedPayment())
                     <div class="mt-4 rounded-2xl border border-ink-100 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
                         <p class="text-sm text-ink-600 dark:text-ink-400">
                             We are checking your payment now and will confirm all {{ $order->bookings->count() }} sessions shortly.
                         </p>
-                        <div class="mt-3 flex items-center justify-between rounded-xl bg-ink-100/60 px-4 py-3 dark:bg-ink-800/60">
-                            <div>
-                                <p class="text-xs text-ink-500 dark:text-ink-400">GCash reference</p>
-                                <p class="font-mono text-sm text-ink-900 dark:text-ink-100">{{ $order->gcash_reference }}</p>
+                        @if ($order->gcash_reference)
+                            <div class="mt-3 flex items-center justify-between rounded-xl bg-ink-100/60 px-4 py-3 dark:bg-ink-800/60">
+                                <div>
+                                    <p class="text-xs text-ink-500 dark:text-ink-400">GCash reference</p>
+                                    <p class="font-mono text-sm text-ink-900 dark:text-ink-100">{{ $order->gcash_reference }}</p>
+                                </div>
                             </div>
-                        </div>
+                        @endif
 
                         @if ($order->paymentProofUrl())
                             <div class="mt-4" x-data="{ lightbox: false, zoomed: false }">

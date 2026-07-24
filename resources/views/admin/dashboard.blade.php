@@ -122,6 +122,11 @@
                                         <i class="ph ph-check-circle text-sm"></i>
                                         {{ $booking->gcash_reference }}
                                     </span>
+                                @elseif ($booking->paymentProofUrl())
+                                    <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                                        <i class="ph ph-check-circle text-sm"></i>
+                                        Proof of payment
+                                    </span>
                                 @else
                                     <span class="inline-flex items-center gap-1 text-xs font-medium text-rose-600 dark:text-rose-400">
                                         <i class="ph ph-x-circle text-sm"></i>

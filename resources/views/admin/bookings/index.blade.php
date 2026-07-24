@@ -7,10 +7,18 @@
     // Only a still-live, not-yet-happened session can be picked to move -
     // one that's already rejected/cancelled/completed has nothing left to
     // reschedule, and one tied to an active Open Play room can't have its
-    // slots swapped out from under the room.
-    $isReschedulable = fn ($booking) => in_array($booking->status, ['pending_payment', 'confirmed'], true)
-        && ! $isSessionPast($booking)
-        && ! $booking->openPlayRoomCourt()->exists();
+    // slots swapped out from under the room. A held booking has zero slots
+    // by design, so the past-date check doesn't apply to it - only whether
+    // it's still actually on hold matters.
+    $isReschedulable = fn ($booking) => $booking->status === 'on_hold'
+        ? $booking->holds->whereNull('resolved_at')->isNotEmpty()
+        : in_array($booking->status, ['pending_payment', 'confirmed'], true)
+            && ! $isSessionPast($booking)
+            && ! $booking->openPlayRoomCourt()->exists();
+
+    // Only a currently confirmed booking (not already on hold, rejected,
+    // etc.) not tied to an active Open Play room can be put on hold.
+    $isHoldable = fn ($booking) => $booking->status === 'confirmed' && ! $booking->openPlayRoomCourt()->exists();
 
     // Reschedules now update the same booking in place instead of creating
     // a replacement row - this is the most recent move, if any, so it can
@@ -24,6 +32,18 @@
     $splitFromNote = fn ($booking) => $booking->relationLoaded('splitFrom') ? $booking->splitFrom : null;
     $splitSiblingsNote = fn ($booking) => $booking->relationLoaded('splitSiblings') ? $booking->splitSiblings : collect();
 
+    // When the booking a session split off from is itself on hold, this
+    // finds what time was actually held - so "split off from X (on hold)"
+    // can say when, not just that it happened.
+    $splitFromHoldNote = fn ($booking) => $booking && $booking->status === 'on_hold' && $booking->relationLoaded('holds')
+        ? $booking->holds->whereNull('resolved_at')->first()
+        : null;
+
+    // A held session has zero slots, so there's nothing for the normal
+    // date/time display to read - this surfaces what it USED to be instead,
+    // wherever a session's slots might be empty because it's on hold.
+    $holdNote = fn ($booking) => $booking->relationLoaded('holds') ? $booking->holds->whereNull('resolved_at')->first() : null;
+
     // A pending_payment booking with a GCash reference already submitted is
     // sitting in the admin review queue, not waiting on the customer anymore
     // - give it its own color/label instead of looking identical to "customer
@@ -35,6 +55,7 @@
         $booking->status === 'rejected' => 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300',
         $booking->status === 'cancelled' => 'bg-ink-200 text-ink-600 dark:bg-ink-800 dark:text-ink-400',
         $booking->status === 'completed' => 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
+        $booking->status === 'on_hold' => 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
         default => 'bg-ink-200 text-ink-600 dark:bg-ink-800 dark:text-ink-400',
     };
 
@@ -143,7 +164,7 @@
             <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Status</label>
             <select name="status" class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-800 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200">
                 <option value="">All</option>
-                @foreach (['pending_payment' => 'Pending payment', 'confirmed' => 'Confirmed', 'rejected' => 'Rejected', 'cancelled' => 'Cancelled', 'completed' => 'Completed'] as $value => $label)
+                @foreach (['pending_payment' => 'Pending payment', 'confirmed' => 'Confirmed', 'on_hold' => 'On hold', 'rejected' => 'Rejected', 'cancelled' => 'Cancelled', 'completed' => 'Completed'] as $value => $label)
                     <option value="{{ $value }}" @selected(($filters['status'] ?? '') === $value)>{{ $label }}</option>
                 @endforeach
             </select>
@@ -232,6 +253,11 @@
                                     <i class="ph ph-check-circle text-sm"></i>
                                     {{ $booking->gcash_reference }}
                                 </span>
+                            @elseif ($booking->paymentProofUrl())
+                                <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                                    <i class="ph ph-check-circle text-sm"></i>
+                                    Proof of payment
+                                </span>
                             @else
                                 <span class="inline-flex items-center gap-1 text-xs font-medium text-rose-600 dark:text-rose-400">
                                     <i class="ph ph-x-circle text-sm"></i>
@@ -267,14 +293,34 @@
                                                 <i class="ph ph-arrow-clockwise text-base"></i>
                                             </a>
                                         @endif
-                                    @elseif ($isReschedulable($booking))
-                                        <a
-                                            href="{{ route('admin.bookings.reschedule.edit', $booking) }}"
-                                            class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-ink-400 hover:text-ink-800 dark:border-ink-700 dark:text-ink-400"
-                                            title="Reschedule this booking"
-                                        >
-                                            <i class="ph ph-arrow-clockwise text-base"></i>
-                                        </a>
+                                        @if ($booking->bookingOrder->bookings->contains($isHoldable))
+                                            <a
+                                                href="{{ route('admin.bookings.hold.select', $booking->bookingOrder) }}"
+                                                class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-amber-400 hover:text-amber-700 dark:border-ink-700 dark:text-ink-400"
+                                                title="Pick a session to hold"
+                                            >
+                                                <i class="ph ph-pause-circle text-base"></i>
+                                            </a>
+                                        @endif
+                                    @else
+                                        @if ($isReschedulable($booking))
+                                            <a
+                                                href="{{ route('admin.bookings.reschedule.edit', $booking) }}"
+                                                class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-ink-400 hover:text-ink-800 dark:border-ink-700 dark:text-ink-400"
+                                                title="Reschedule this booking"
+                                            >
+                                                <i class="ph ph-arrow-clockwise text-base"></i>
+                                            </a>
+                                        @endif
+                                        @if ($isHoldable($booking))
+                                            <a
+                                                href="{{ route('admin.bookings.hold.edit', $booking) }}"
+                                                class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-amber-400 hover:text-amber-700 dark:border-ink-700 dark:text-ink-400"
+                                                title="Put this booking on hold"
+                                            >
+                                                <i class="ph ph-pause-circle text-base"></i>
+                                            </a>
+                                        @endif
                                     @endif
                                 @endif
                                 @if ($booking->status === 'pending_payment' && (auth()->user()->isAdmin() || auth()->user()->isStaff()))
@@ -330,14 +376,21 @@
                                             $log = $rescheduleNote($session);
                                             $splitFrom = $splitFromNote($session);
                                             $splitSiblings = $splitSiblingsNote($session);
+                                            $hold = $session->status === 'on_hold' ? $holdNote($session) : null;
                                         @endphp
                                         <li class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm {{ $sessionPast ? 'opacity-50' : '' }}">
                                             <span class="font-mono text-xs text-ink-500 dark:text-ink-400">{{ $session->booking_code }}</span>
-                                            <span class="text-ink-700 dark:text-ink-300">
-                                                @foreach ($session->slots->sortBy('start_time') as $slot)
-                                                    {{ \Illuminate\Support\Carbon::parse($slot->slot_date)->format('M j') }}, {{ \Illuminate\Support\Carbon::parse($slot->start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($slot->end_time)->format('g:i A') }}@if (! $loop->last), @endif
-                                                @endforeach
-                                            </span>
+                                            @if ($session->slots->isNotEmpty())
+                                                <span class="text-ink-700 dark:text-ink-300">
+                                                    @foreach ($session->slots->sortBy('start_time') as $slot)
+                                                        {{ \Illuminate\Support\Carbon::parse($slot->slot_date)->format('M j') }}, {{ \Illuminate\Support\Carbon::parse($slot->start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($slot->end_time)->format('g:i A') }}@if (! $loop->last), @endif
+                                                    @endforeach
+                                                </span>
+                                            @elseif ($hold)
+                                                <span class="text-amber-700 dark:text-amber-400">
+                                                    was {{ $hold->from_slot_date->format('M j') }}, {{ \Illuminate\Support\Carbon::parse($hold->from_start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($hold->from_end_time)->format('g:i A') }}
+                                                </span>
+                                            @endif
                                             <span class="font-medium text-ink-900 dark:text-ink-100">₱{{ number_format($session->total_price, 2) }}</span>
                                             <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold {{ $statusBadge($session) }}">{{ $statusLabel($session) }}</span>
                                             @if ($log)
@@ -345,8 +398,20 @@
                                                     ↻ was {{ $log->from_slot_date->format('M j') }}, {{ \Illuminate\Support\Carbon::parse($log->from_start_time)->format('g:i A') }}
                                                 </span>
                                             @endif
+                                            @if ($hold && $hold->reason)
+                                                <span class="text-[10px] text-ink-400" title="Held {{ $hold->created_at->format('M j, g:i A') }}">
+                                                    ⏸ {{ $hold->reason }}
+                                                </span>
+                                            @endif
                                             @if ($splitFrom)
-                                                <span class="text-[10px] text-ink-400">✂ split off from {{ $splitFrom->booking_code }} — kept at its original time</span>
+                                                @php $splitFromHold = $splitFromHoldNote($splitFrom); @endphp
+                                                <span class="text-[10px] text-ink-400">
+                                                    ✂ split off from {{ $splitFrom->booking_code }}
+                                                    @if ($splitFromHold)
+                                                        (on hold: {{ $splitFromHold->from_slot_date->format('M j') }}, {{ \Illuminate\Support\Carbon::parse($splitFromHold->from_start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($splitFromHold->from_end_time)->format('g:i A') }})
+                                                    @endif
+                                                    — kept at its original time
+                                                </span>
                                             @endif
                                             @if ($splitSiblings->isNotEmpty())
                                                 <span class="text-[10px] text-ink-400">✂ {{ $splitSiblings->count() }} hour(s) split off, kept booked ({{ $splitSiblings->pluck('booking_code')->implode(', ') }})</span>
@@ -357,6 +422,11 @@
                                             @if ($canManage && $isReschedulable($session))
                                                 <a href="{{ route('admin.bookings.reschedule.edit', $session) }}" class="text-[10px] font-semibold text-accent-700 hover:text-accent-800 dark:text-accent-400">
                                                     Reschedule
+                                                </a>
+                                            @endif
+                                            @if ($canManage && $isHoldable($session))
+                                                <a href="{{ route('admin.bookings.hold.edit', $session) }}" class="text-[10px] font-semibold text-amber-700 hover:text-amber-800 dark:text-amber-400">
+                                                    Hold
                                                 </a>
                                             @endif
                                         </li>
@@ -460,6 +530,7 @@
                                         $splitSiblings = $splitSiblingsNote($session);
                                         $firstSlot = $session->slots->sortBy('start_time')->first();
                                         $lastSlot = $session->slots->sortBy('start_time')->last();
+                                        $hold = $session->status === 'on_hold' ? $holdNote($session) : null;
                                     @endphp
                                     <div class="rounded-xl border border-ink-100 bg-ink-50/60 p-3 dark:border-ink-800 dark:bg-ink-950/40">
                                         <div class="flex items-center justify-between gap-2">
@@ -474,6 +545,17 @@
                                                 <i class="ph ph-clock text-sm"></i>
                                                 {{ \Illuminate\Support\Carbon::parse($firstSlot->start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($lastSlot->end_time)->format('g:i A') }}
                                             </p>
+                                        @elseif ($hold)
+                                            <p class="mt-1.5 text-sm font-semibold text-amber-700 dark:text-amber-400">
+                                                On hold since {{ $hold->from_slot_date->format('M j') }}
+                                            </p>
+                                            <p class="mt-0.5 flex items-center gap-1.5 text-sm text-ink-600 dark:text-ink-400">
+                                                <i class="ph ph-clock text-sm"></i>
+                                                was {{ \Illuminate\Support\Carbon::parse($hold->from_start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($hold->from_end_time)->format('g:i A') }}
+                                            </p>
+                                            @if ($hold->reason)
+                                                <p class="mt-0.5 text-xs text-ink-400">{{ $hold->reason }}</p>
+                                            @endif
                                         @endif
                                         <p class="mt-0.5 text-xs text-ink-400">{{ $session->court->name ?? $booking->court->name }} &middot; ₱{{ number_format($session->total_price, 2) }}</p>
                                         @if ($log)
@@ -482,7 +564,14 @@
                                             </p>
                                         @endif
                                         @if ($splitFrom)
-                                            <p class="mt-1.5 text-xs text-ink-400">✂ Split off from {{ $splitFrom->booking_code }} — kept at its original time</p>
+                                            @php $splitFromHold = $splitFromHoldNote($splitFrom); @endphp
+                                            <p class="mt-1.5 text-xs text-ink-400">
+                                                ✂ Split off from {{ $splitFrom->booking_code }}
+                                                @if ($splitFromHold)
+                                                    (on hold: {{ $splitFromHold->from_slot_date->format('M j') }}, {{ \Illuminate\Support\Carbon::parse($splitFromHold->from_start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($splitFromHold->from_end_time)->format('g:i A') }})
+                                                @endif
+                                                — kept at its original time
+                                            </p>
                                         @endif
                                         @if ($splitSiblings->isNotEmpty())
                                             <p class="mt-1.5 text-xs text-ink-400">✂ {{ $splitSiblings->count() }} hour(s) split off, kept booked — see {{ $splitSiblings->pluck('booking_code')->implode(', ') }}</p>
@@ -490,6 +579,11 @@
                                         @if ((auth()->user()->isAdmin() || auth()->user()->isStaff()) && $isReschedulable($session))
                                             <a href="{{ route('admin.bookings.reschedule.edit', $session) }}" class="mt-2 inline-flex items-center gap-1 rounded-lg border border-accent-300 bg-white px-2 py-1 text-xs font-semibold text-accent-700 hover:border-accent-400 hover:bg-accent-50 dark:border-accent-800 dark:bg-transparent dark:text-accent-400 dark:hover:bg-accent-950">
                                                 <i class="ph ph-arrow-clockwise"></i> Reschedule
+                                            </a>
+                                        @endif
+                                        @if ((auth()->user()->isAdmin() || auth()->user()->isStaff()) && $isHoldable($session))
+                                            <a href="{{ route('admin.bookings.hold.edit', $session) }}" class="mt-2 ml-1 inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs font-semibold text-amber-700 hover:border-amber-400 hover:bg-amber-50 dark:border-amber-800 dark:bg-transparent dark:text-amber-400 dark:hover:bg-amber-950">
+                                                <i class="ph ph-pause-circle"></i> Hold
                                             </a>
                                         @endif
                                     </div>
@@ -510,6 +604,14 @@
                                     <i class="ph ph-clock text-sm"></i>
                                     {{ \Illuminate\Support\Carbon::parse($firstSlot->start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($lastSlot->end_time)->format('g:i A') }}
                                 </p>
+                            @elseif ($booking->status === 'on_hold' && $booking->holds->first())
+                                @php $__hold = $booking->holds->first(); @endphp
+                                <p class="mt-1 text-sm text-amber-700 dark:text-amber-400">
+                                    On hold since {{ $__hold->from_slot_date->format('M j') }}, {{ \Illuminate\Support\Carbon::parse($__hold->from_start_time)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::parse($__hold->from_end_time)->format('g:i A') }}
+                                </p>
+                                @if ($__hold->reason)
+                                    <p class="mt-0.5 text-xs text-ink-500 dark:text-ink-400">{{ $__hold->reason }}</p>
+                                @endif
                             @endif
                             <p class="mt-2 border-t border-ink-100 pt-2 font-display text-xl font-semibold text-ink-950 dark:border-ink-800 dark:text-white">₱{{ number_format($booking->total_price, 2) }}</p>
                         @endif
@@ -525,6 +627,11 @@
                                 <i class="ph ph-check-circle text-sm"></i> Reference submitted
                             </p>
                             <p class="mt-2 font-mono text-sm text-ink-900 dark:text-ink-100">{{ $booking->gcash_reference }}</p>
+                            <p class="text-xs text-ink-500 dark:text-ink-400">Submitted {{ $booking->gcash_submitted_at?->format('M j, g:i A') }}</p>
+                        @elseif ($booking->paymentProofUrl())
+                            <p class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                                <i class="ph ph-check-circle text-sm"></i> Proof of payment submitted
+                            </p>
                             <p class="text-xs text-ink-500 dark:text-ink-400">Submitted {{ $booking->gcash_submitted_at?->format('M j, g:i A') }}</p>
                         @else
                             <p class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
@@ -578,7 +685,25 @@
 
                     @php
                         $history = $booking->statusLogs
-                            ->map(fn ($log) => ['at' => $log->created_at, 'changedBy' => $log->changedBy, 'label' => str($log->to_status)->replace('_', ' ')->headline()])
+                            ->map(function ($log) use ($booking) {
+                                $label = str($log->to_status)->replace('_', ' ')->headline();
+
+                                // "On Hold" alone doesn't say which hours -
+                                // find the hold record from around the same
+                                // moment and append what time was held.
+                                if ($log->to_status === 'on_hold') {
+                                    $hold = $booking->holds->sortBy(fn ($h) => abs($h->created_at->diffInSeconds($log->created_at)))->first();
+                                    if ($hold) {
+                                        $label .= ': '.$hold->from_slot_date->format('M j').', '.\Illuminate\Support\Carbon::parse($hold->from_start_time)->format('g:i A').'–'.\Illuminate\Support\Carbon::parse($hold->from_end_time)->format('g:i A');
+                                    }
+                                }
+
+                                return [
+                                    'at' => $log->created_at,
+                                    'changedBy' => $log->changedBy,
+                                    'label' => $label.($log->note ? " — {$log->note}" : ''),
+                                ];
+                            })
                             ->concat($booking->rescheduleLogs->map(fn ($log) => [
                                 'at' => $log->created_at,
                                 'changedBy' => $log->changedBy,
@@ -696,6 +821,23 @@
                                 >
                                     <i class="ph ph-arrow-clockwise text-base"></i>
                                     Reschedule
+                                </a>
+                            @endif
+                            @if ((auth()->user()->isAdmin() || auth()->user()->isStaff()) && ! $booking->bookingOrder && $isHoldable($booking))
+                                <a
+                                    href="{{ route('admin.bookings.hold.edit', $booking) }}"
+                                    class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-ink-200 px-4 py-2 text-sm font-semibold text-ink-700 hover:border-amber-400 hover:text-amber-700 dark:border-ink-700 dark:text-ink-300 dark:hover:text-amber-400"
+                                >
+                                    <i class="ph ph-pause-circle text-base"></i>
+                                    Hold
+                                </a>
+                            @elseif ((auth()->user()->isAdmin() || auth()->user()->isStaff()) && $booking->bookingOrder && $booking->bookingOrder->bookings->contains($isHoldable))
+                                <a
+                                    href="{{ route('admin.bookings.hold.select', $booking->bookingOrder) }}"
+                                    class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-ink-200 px-4 py-2 text-sm font-semibold text-ink-700 hover:border-amber-400 hover:text-amber-700 dark:border-ink-700 dark:text-ink-300 dark:hover:text-amber-400"
+                                >
+                                    <i class="ph ph-pause-circle text-base"></i>
+                                    Hold a session
                                 </a>
                             @endif
                         </div>

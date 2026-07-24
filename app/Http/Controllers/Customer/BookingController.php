@@ -17,7 +17,10 @@ class BookingController extends Controller
         $user = Auth::user();
 
         $bookings = $this->representativeBookings($user)
-            ->with(['court', 'slots', 'bookingOrder' => fn ($q) => $q->withCount('bookings'), 'bookingOrder.bookings.slots'])
+            ->with([
+                'court', 'slots', 'bookingOrder' => fn ($q) => $q->withCount('bookings'), 'bookingOrder.bookings.slots',
+                'holds' => fn ($q) => $q->whereNull('resolved_at'),
+            ])
             ->latest()
             ->paginate(10);
 
@@ -39,14 +42,14 @@ class BookingController extends Controller
             ? $user->bookings()
                 ->whereIn('id', $ids)
                 ->with(['slots:id,slot_date', 'bookingOrder' => fn ($q) => $q->withCount('bookings'), 'bookingOrder.bookings.slots:id,slot_date'])
-                ->get(['id', 'status', 'gcash_reference', 'booking_order_id'])
+                ->get(['id', 'status', 'gcash_reference', 'payment_proof_path', 'booking_order_id'])
             : collect();
 
         return response()
             ->json([
                 'pending_count' => $this->representativeBookings($user)->where('status', 'pending_payment')->count(),
                 'statuses' => $bookings->mapWithKeys(fn (Booking $b) => [$b->id => $this->effectiveStatus($b)]),
-                'has_reference' => $bookings->mapWithKeys(fn ($b) => [$b->id => filled($b->gcash_reference)]),
+                'has_reference' => $bookings->mapWithKeys(fn (Booking $b) => [$b->id => $b->hasSubmittedPayment()]),
             ])
             ->header('Cache-Control', 'no-store');
     }
@@ -82,15 +85,32 @@ class BookingController extends Controller
 
     /**
      * A multi-session order is one purchase, so it counts/appears as a
-     * single booking here (its earliest booking) instead of one per
-     * session - same collapsing the admin bookings list does.
+     * single booking here instead of one per session - same collapsing the
+     * admin bookings list does. Prefers the earliest session that ISN'T on
+     * hold - otherwise, the moment an order's earliest session gets held
+     * (see BookingService::holdSlots(), which always keeps the original id
+     * on the held piece), this row would represent the whole order with the
+     * held session's status/blank schedule even though the rest of the
+     * order might still be fully active. Falls back to the plain
+     * earliest-id when every session in an order is on hold.
      */
     protected function representativeBookings(User $user): HasMany
     {
         return $user->bookings()->where(function ($q) {
             $q->whereNull('booking_order_id')
                 ->orWhereIn('id', function ($sub) {
-                    $sub->selectRaw('MIN(id)')->from('bookings')->whereNotNull('booking_order_id')->groupBy('booking_order_id');
+                    $sub->selectRaw('MIN(id)')
+                        ->from('bookings')
+                        ->whereNotNull('booking_order_id')
+                        ->where('status', '!=', 'on_hold')
+                        ->groupBy('booking_order_id');
+                })
+                ->orWhereIn('id', function ($sub) {
+                    $sub->selectRaw('MIN(id)')
+                        ->from('bookings')
+                        ->whereNotNull('booking_order_id')
+                        ->groupBy('booking_order_id')
+                        ->havingRaw("SUM(CASE WHEN status != 'on_hold' THEN 1 ELSE 0 END) = 0");
                 });
         });
     }

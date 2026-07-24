@@ -126,6 +126,7 @@ Route::middleware(['auth', 'role:admin,staff'])->prefix('admin')->name('admin.')
     Route::get('/bookings/create', [AdminBookingController::class, 'create'])->name('bookings.create');
     Route::post('/bookings', [AdminBookingController::class, 'store'])->name('bookings.store');
     Route::get('/bookings/schedule', [AdminBookingController::class, 'schedule'])->name('bookings.schedule');
+    Route::get('/bookings/holds', [AdminBookingController::class, 'holds'])->name('bookings.holds.index');
     Route::get('/bookings/latest', [AdminBookingController::class, 'latest'])->name('bookings.latest');
     Route::get('/bookings/pending-count', [AdminBookingController::class, 'pendingCount'])->name('bookings.pending-count');
 
@@ -140,6 +141,10 @@ Route::middleware(['auth', 'role:admin,staff'])->prefix('admin')->name('admin.')
     Route::get('/bookings/{booking}/reschedule', [AdminBookingController::class, 'editReschedule'])->name('bookings.reschedule.edit');
     Route::post('/bookings/{booking}/reschedule', [AdminBookingController::class, 'updateReschedule'])->name('bookings.reschedule.update');
     Route::post('/bookings/{booking}/split-reschedule', [AdminBookingController::class, 'updateSplitReschedule'])->name('bookings.split-reschedule.update');
+    Route::get('/bookings/orders/{order}/hold', [AdminBookingController::class, 'selectHold'])->name('bookings.hold.select');
+    Route::get('/bookings/{booking}/hold', [AdminBookingController::class, 'holdForm'])->name('bookings.hold.edit');
+    Route::post('/bookings/{booking}/hold', [AdminBookingController::class, 'hold'])->name('bookings.hold.store');
+    Route::post('/bookings/{booking}/cancel-hold', [AdminBookingController::class, 'cancelHold'])->name('bookings.hold.cancel');
 
     // Live match scoring on a checked-in booking: admin and staff both run these.
     Route::get('/bookings/{booking}/matches/create', [MatchController::class, 'create'])->name('matches.create');

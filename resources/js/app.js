@@ -5,6 +5,7 @@ import availabilityGrid from './availability-grid';
 import matchScoreboard from './match-scoreboard';
 import bookingsList from './bookings-list';
 import adminBookingForm from './admin-booking-form';
+import holdSlotsForm from './hold-slots-form';
 import galleryUpload from './gallery-upload';
 import openPlayDashboard from './open-play-dashboard';
 
@@ -58,6 +59,7 @@ Alpine.data('availabilityGrid', availabilityGrid);
 Alpine.data('matchScoreboard', matchScoreboard);
 Alpine.data('bookingsList', bookingsList);
 Alpine.data('adminBookingForm', adminBookingForm);
+Alpine.data('holdSlotsForm', holdSlotsForm);
 Alpine.data('galleryUpload', galleryUpload);
 Alpine.data('openPlayDashboard', openPlayDashboard);
 Alpine.start();

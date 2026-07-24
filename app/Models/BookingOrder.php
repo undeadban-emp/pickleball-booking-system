@@ -77,6 +77,6 @@ class BookingOrder extends Model
 
     public function hasSubmittedPayment(): bool
     {
-        return filled($this->gcash_reference);
+        return filled($this->gcash_reference) || filled($this->payment_proof_path);
     }
 }

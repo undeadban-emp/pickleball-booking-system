@@ -17,7 +17,10 @@ class PublicOrderController extends Controller
     public function show(string $token)
     {
         $order = BookingOrder::where('receipt_token', $token)
-            ->with(['bookings.court', 'bookings.slots', 'paymentMethod'])
+            ->with([
+                'bookings.court', 'bookings.slots', 'bookings.rescheduleLogs', 'paymentMethod',
+                'bookings.holds' => fn ($q) => $q->whereNull('resolved_at')->with('fromCourt:id,name'),
+            ])
             ->firstOrFail();
 
         $paymentHoldMinutes = OperatingHours::current()->payment_hold_minutes ?? 30;
@@ -56,7 +59,7 @@ class PublicOrderController extends Controller
         return response()
             ->json([
                 'status' => $order->status,
-                'has_reference' => filled($order->gcash_reference),
+                'has_reference' => $order->hasSubmittedPayment(),
             ])
             ->header('Cache-Control', 'no-store');
     }
@@ -67,8 +70,8 @@ class PublicOrderController extends Controller
 
         $data = $request->validate([
             'payment_method_id' => ['required', 'exists:payment_methods,id'],
-            'gcash_reference' => ['required', 'string', 'min:6', 'max:40'],
-            'proof_of_payment' => ['nullable', 'image', 'max:4096'],
+            'gcash_reference' => ['nullable', 'string', 'min:6', 'max:40'],
+            'proof_of_payment' => ['required', 'image', 'max:4096'],
         ]);
 
         $proofPath = null;
@@ -82,7 +85,7 @@ class PublicOrderController extends Controller
         }
 
         try {
-            $this->bookingOrders->submitGcashReference($order, $data['gcash_reference'], $proofPath, (int) $data['payment_method_id']);
+            $this->bookingOrders->submitGcashReference($order, $data['gcash_reference'] ?? null, $proofPath, (int) $data['payment_method_id']);
         } catch (InvalidBookingTransitionException $e) {
             return back()->withErrors(['gcash_reference' => $e->getMessage()]);
         }

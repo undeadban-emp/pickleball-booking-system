@@ -10,6 +10,7 @@ const STATUS_META = {
     cancelled: { label: 'Cancelled', class: 'bg-ink-200 text-ink-600 dark:bg-ink-800 dark:text-ink-400' },
     completed: { label: 'Completed', class: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300' },
     no_show: { label: 'No show', class: 'bg-ink-200 text-ink-600 dark:bg-ink-800 dark:text-ink-400' },
+    on_hold: { label: 'Temporarily on hold', class: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' },
 };
 const DEFAULT_META = { label: '', class: 'bg-ink-100 text-ink-500 dark:bg-ink-800 dark:text-ink-400' };
 const POLL_INTERVAL_MS = 15000;

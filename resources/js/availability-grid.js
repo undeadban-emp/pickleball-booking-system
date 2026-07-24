@@ -430,7 +430,7 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
             if (!slot) return 'invisible';
 
             if (this.isSelected(court, time)) {
-                return 'border-accent-500 bg-accent-500 text-ink-950';
+                return 'border-accent-500 bg-accent-500 text-white';
             }
 
             switch (slot.status) {

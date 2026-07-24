@@ -12,6 +12,7 @@
         $booking->status === 'rejected' => 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300',
         $booking->status === 'cancelled' => 'bg-ink-200 text-ink-600 dark:bg-ink-800 dark:text-ink-400',
         $booking->status === 'completed' => 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
+        $booking->status === 'on_hold' => 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
         default => 'bg-ink-200 text-ink-600 dark:bg-ink-800 dark:text-ink-400',
     };
 
@@ -26,6 +27,20 @@
     $isReschedulable = fn ($booking) => in_array($booking->status, ['pending_payment', 'confirmed'], true)
         && (! $booking->slots->max('slot_date') || Carbon::parse($booking->slots->max('slot_date'))->gte(today()))
         && ! $booking->openPlayRoomCourt()->exists();
+
+    // Only a currently confirmed booking (not already on hold, rejected,
+    // etc.) not tied to an active Open Play room can be put on hold.
+    $isHoldable = fn ($booking) => $booking->status === 'confirmed' && ! $booking->openPlayRoomCourt()->exists();
+
+    // A partial hold (or partial reschedule) splits a booking's untouched
+    // hours off into a sibling booking row that keeps its original
+    // date/time - this session might be that sibling, or the piece it was
+    // split from might itself be on hold elsewhere.
+    $splitFromNote = fn ($booking) => $booking->relationLoaded('splitFrom') ? $booking->splitFrom : null;
+    $splitSiblingsNote = fn ($booking) => $booking->relationLoaded('splitSiblings') ? $booking->splitSiblings : collect();
+    $splitFromHoldNote = fn ($booking) => $booking && $booking->status === 'on_hold' && $booking->relationLoaded('holds')
+        ? $booking->holds->whereNull('resolved_at')->first()
+        : null;
 
     $todayStr = Carbon::today()->toDateString();
     $selectedStr = $date->toDateString();
@@ -185,14 +200,34 @@
                             @endif
                         </div>
 
-                        <button
-                            type="button"
-                            @click.stop="activeId = {{ $booking->id }}"
-                            class="shrink-0 rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-ink-400 hover:text-ink-800 dark:border-ink-700 dark:text-ink-400"
-                            title="View booking info"
-                        >
-                            <i class="ph ph-eye text-base"></i>
-                        </button>
+                        <div class="flex shrink-0 items-center gap-2" @click.stop>
+                            <button
+                                type="button"
+                                @click="activeId = {{ $booking->id }}"
+                                class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-ink-400 hover:text-ink-800 dark:border-ink-700 dark:text-ink-400"
+                                title="View booking info"
+                            >
+                                <i class="ph ph-eye text-base"></i>
+                            </button>
+                            @if ((auth()->user()->isAdmin() || auth()->user()->isStaff()) && $isReschedulable($booking))
+                                <a
+                                    href="{{ route('admin.bookings.reschedule.edit', $booking) }}"
+                                    class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-accent-400 hover:text-accent-700 dark:border-ink-700 dark:text-ink-400"
+                                    title="Reschedule this booking"
+                                >
+                                    <i class="ph ph-arrow-clockwise text-base"></i>
+                                </a>
+                            @endif
+                            @if ((auth()->user()->isAdmin() || auth()->user()->isStaff()) && $isHoldable($booking))
+                                <a
+                                    href="{{ route('admin.bookings.hold.edit', $booking) }}"
+                                    class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-amber-400 hover:text-amber-700 dark:border-ink-700 dark:text-ink-400"
+                                    title="Put this booking on hold"
+                                >
+                                    <i class="ph ph-pause-circle text-base"></i>
+                                </a>
+                            @endif
+                        </div>
                     </li>
                 @empty
                     <li class="rounded-xl border border-dashed border-ink-200 p-6 text-center text-sm text-ink-500 dark:border-ink-800 dark:text-ink-400">
@@ -305,6 +340,24 @@
                             </p>
                         @endif
                         <p class="mt-2 border-t border-ink-100 pt-2 font-display text-xl font-semibold text-ink-950 dark:border-ink-800 dark:text-white">₱{{ number_format($booking->total_price, 2) }}</p>
+
+                        @php
+                            $splitFrom = $splitFromNote($booking);
+                            $splitSiblings = $splitSiblingsNote($booking);
+                        @endphp
+                        @if ($splitFrom)
+                            @php $splitFromHold = $splitFromHoldNote($splitFrom); @endphp
+                            <p class="mt-2 border-t border-ink-100 pt-2 text-xs text-ink-400 dark:border-ink-800">
+                                ✂ Split off from {{ $splitFrom->booking_code }}
+                                @if ($splitFromHold)
+                                    (on hold: {{ $splitFromHold->from_slot_date->format('M j') }}, {{ Carbon::parse($splitFromHold->from_start_time)->format('g:i A') }}–{{ Carbon::parse($splitFromHold->from_end_time)->format('g:i A') }})
+                                @endif
+                                — kept at its original time
+                            </p>
+                        @endif
+                        @if ($splitSiblings->isNotEmpty())
+                            <p class="mt-2 border-t border-ink-100 pt-2 text-xs text-ink-400 dark:border-ink-800">✂ {{ $splitSiblings->count() }} hour(s) split off, kept booked — see {{ $splitSiblings->pluck('booking_code')->implode(', ') }}</p>
+                        @endif
                     </div>
 
                     <div>
@@ -314,6 +367,11 @@
                                 <i class="ph ph-check-circle text-sm"></i> Reference submitted
                             </p>
                             <p class="mt-2 font-mono text-sm text-ink-900 dark:text-ink-100">{{ $booking->gcash_reference }}</p>
+                            <p class="text-xs text-ink-500 dark:text-ink-400">Submitted {{ $booking->gcash_submitted_at?->format('M j, g:i A') }}</p>
+                        @elseif ($booking->paymentProofUrl())
+                            <p class="mt-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                                <i class="ph ph-check-circle text-sm"></i> Proof of payment submitted
+                            </p>
                             <p class="text-xs text-ink-500 dark:text-ink-400">Submitted {{ $booking->gcash_submitted_at?->format('M j, g:i A') }}</p>
                         @else
                             <p class="mt-1 inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
@@ -392,55 +450,71 @@
                         </div>
                     @endif
 
+                {{-- Actions --}}
+                <div class="sticky bottom-0 -mx-5 -mb-5 space-y-3 border-t border-ink-100 bg-white/95 px-5 py-4 backdrop-blur lg:col-span-2 dark:border-ink-800 dark:bg-ink-900/95">
                     @if (auth()->user()->isAdmin() || auth()->user()->isStaff())
-                        <div class="flex flex-wrap gap-2 border-t border-ink-100 pt-4 lg:col-span-2 dark:border-ink-800">
-                            @if ($booking->status === 'pending_payment')
-                                <form
-                                    method="POST"
-                                    action="{{ route('admin.bookings.approve', $booking) }}"
+                        @if ($booking->status === 'pending_payment')
+                            <div class="flex gap-2">
+                                <form method="POST" action="{{ route('admin.bookings.approve', $booking) }}" class="flex-1"
                                     onsubmit="return confirmSubmit(this, { title: 'Approve this booking?', text: 'The customer will be notified that their booking is confirmed.', icon: 'question', confirmButtonText: 'Approve', confirmButtonColor: '#10b981' });"
                                 >
                                     @csrf
-                                    <button type="submit" class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600">Approve</button>
+                                    <button type="submit" class="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-600">
+                                        <i class="ph ph-check-circle text-base"></i> Approve
+                                    </button>
                                 </form>
-                                <form
-                                    method="POST"
-                                    action="{{ route('admin.bookings.reject', $booking) }}"
+                                <form method="POST" action="{{ route('admin.bookings.reject', $booking) }}" class="flex-1"
                                     onsubmit="return confirmSubmit(this, { title: 'Reject this booking?', text: 'The customer will be notified that their payment was not confirmed.', icon: 'warning', confirmButtonText: 'Reject', confirmButtonColor: '#e11d48' });"
                                 >
                                     @csrf
-                                    <button type="submit" class="rounded-lg bg-rose-500 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-600">Reject</button>
+                                    <button type="submit" class="flex w-full items-center justify-center gap-1.5 rounded-xl bg-rose-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-600">
+                                        <i class="ph ph-x-circle text-base"></i> Reject
+                                    </button>
                                 </form>
-                            @elseif ($booking->status === 'confirmed')
-                                <form
-                                    method="POST"
-                                    action="{{ route('admin.bookings.cancel', $booking) }}"
-                                    onsubmit="return confirmSubmit(this, { title: 'Cancel this booking?', text: 'This will free up the slot and notify the customer.', icon: 'warning', confirmButtonText: 'Cancel booking', confirmButtonColor: '#e11d48' });"
-                                >
-                                    @csrf
-                                    <button type="submit" class="rounded-lg border border-ink-200 px-4 py-2 text-sm font-semibold text-ink-700 hover:border-rose-400 hover:text-rose-600 dark:border-ink-700 dark:text-ink-300">Cancel booking</button>
-                                </form>
-                            @endif
-                        </div>
+                            </div>
+                        @elseif ($booking->status === 'confirmed')
+                            <form method="POST" action="{{ route('admin.bookings.cancel', $booking) }}"
+                                onsubmit="return confirmSubmit(this, { title: 'Cancel this booking?', text: 'This will free up the slot and notify the customer.', icon: 'warning', confirmButtonText: 'Cancel booking', confirmButtonColor: '#e11d48' });"
+                            >
+                                @csrf
+                                <button type="submit" class="flex w-full items-center justify-center gap-1.5 rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:border-rose-400 hover:text-rose-600 dark:border-ink-700 dark:text-ink-300">
+                                    <i class="ph ph-prohibit text-base"></i> Cancel booking
+                                </button>
+                            </form>
+                        @endif
                     @endif
 
-                    <div class="flex flex-wrap items-center gap-x-6 gap-y-2 lg:col-span-2">
-                        <a href="{{ route('booking.public', $booking->receipt_token) }}" target="_blank" class="inline-flex items-center gap-1.5 text-sm font-medium text-accent-700 hover:text-accent-800 dark:text-accent-400">
-                            Open customer view
+                    <div class="flex flex-wrap gap-2">
+                        <a
+                            href="{{ route('booking.public', $booking->receipt_token) }}"
+                            target="_blank"
+                            class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-ink-200 px-4 py-2 text-sm font-semibold text-ink-700 hover:border-accent-400 hover:text-accent-700 dark:border-ink-700 dark:text-ink-300 dark:hover:text-accent-400"
+                        >
                             <i class="ph ph-arrow-square-out text-base"></i>
+                            Open customer view
                         </a>
                         @if ((auth()->user()->isAdmin() || auth()->user()->isStaff()) && $isReschedulable($booking))
                             <a
                                 href="{{ route('admin.bookings.reschedule.edit', $booking) }}"
-                                class="inline-flex items-center gap-1.5 text-sm font-medium text-ink-600 hover:text-ink-900 dark:text-ink-400 dark:hover:text-white"
+                                class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-ink-200 px-4 py-2 text-sm font-semibold text-ink-700 hover:border-accent-400 hover:text-accent-700 dark:border-ink-700 dark:text-ink-300 dark:hover:text-accent-400"
                             >
-                                Reschedule this booking
                                 <i class="ph ph-arrow-clockwise text-base"></i>
+                                Reschedule
+                            </a>
+                        @endif
+                        @if ((auth()->user()->isAdmin() || auth()->user()->isStaff()) && $isHoldable($booking))
+                            <a
+                                href="{{ route('admin.bookings.hold.edit', $booking) }}"
+                                class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-ink-200 px-4 py-2 text-sm font-semibold text-ink-700 hover:border-amber-400 hover:text-amber-700 dark:border-ink-700 dark:text-ink-300 dark:hover:text-amber-400"
+                            >
+                                <i class="ph ph-pause-circle text-base"></i>
+                                Hold
                             </a>
                         @endif
                     </div>
                 </div>
             </div>
+        </div>
         @endforeach
     </div>
 

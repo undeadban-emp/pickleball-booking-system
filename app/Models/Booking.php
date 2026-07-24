@@ -170,6 +170,16 @@ class Booking extends Model
         return $this->hasMany(BookingStatusLog::class);
     }
 
+    /**
+     * Every hold this booking has ever been placed on, history included -
+     * callers wanting just the currently-active one (if any) should add
+     * ->whereNull('resolved_at') themselves. See BookingService::holdSlots().
+     */
+    public function holds(): HasMany
+    {
+        return $this->hasMany(BookingHold::class);
+    }
+
     public function matches(): HasMany
     {
         return $this->hasMany(GameMatch::class);
@@ -265,13 +275,15 @@ class Booking extends Model
     }
 
     /**
-     * True once the customer has sent a GCash reference for a pending_payment
-     * booking - it's now sitting in the admin review queue, not actually
-     * waiting on the customer to pay anymore.
+     * True once the customer has sent a GCash reference and/or a proof
+     * screenshot for a pending_payment booking - it's now sitting in the
+     * admin review queue, not actually waiting on the customer to pay
+     * anymore. The reference is optional (proof of payment is the required
+     * field), so either one alone counts as submitted.
      */
     public function hasSubmittedPayment(): bool
     {
-        return filled($this->gcash_reference);
+        return filled($this->gcash_reference) || filled($this->payment_proof_path);
     }
 
     /**

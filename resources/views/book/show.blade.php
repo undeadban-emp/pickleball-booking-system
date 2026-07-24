@@ -103,7 +103,7 @@
                                                     @click="pickSlot(item.index)"
                                                     class="cursor-pointer rounded-full border px-3 py-1.5 text-sm font-medium transition-colors"
                                                     :class="isSelected(item.index)
-                                                        ? 'border-accent-500 bg-accent-500 text-ink-950'
+                                                        ? 'border-accent-500 bg-accent-500 text-white'
                                                         : 'border-ink-200 text-ink-700 hover:border-accent-400 dark:border-ink-700 dark:text-ink-300'"
                                                     x-text="slotLabel(item.slot)"
                                                 ></button>

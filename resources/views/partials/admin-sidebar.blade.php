@@ -12,6 +12,8 @@
         })
         ->count();
 
+    $__activeHoldsCount = \App\Models\BookingHold::whereNull('resolved_at')->count();
+
     $navItem = function (string $routeName, string $label, string $icon, ?int $badge = null) {
         $active = request()->routeIs($routeName.'*');
         return compact('routeName', 'label', 'icon', 'active', 'badge');
@@ -35,6 +37,7 @@
         $navItem('admin.dashboard', 'Dashboard', 'ph-squares-four'),
         $navItem('admin.bookings.index', 'Bookings', 'ph-calendar-check', $__pendingBookingsCount),
         $navItem('admin.bookings.schedule', 'Day Schedule', 'ph-calendar-blank'),
+        $navItem('admin.bookings.holds.index', 'Held Bookings', 'ph-pause-circle', $__activeHoldsCount),
         // Hidden for now - re-add when check-in is ready to surface again.
         // $navItem('admin.checkin.index', 'Check-in', 'ph-qr-code'),
     ]);
@@ -42,8 +45,6 @@
     if (auth()->user()->isAdmin()) {
         $items->push($navItem('admin.courts.index', 'Courts', 'ph-tennis-ball'));
         $items->push($navItem('admin.payment-methods.index', 'Payment methods', 'ph-credit-card'));
-        $items->push($navItem('admin.hero-images.index', 'Hero images', 'ph-image'));
-        $items->push($navItem('admin.gallery-images.index', 'Album', 'ph-images-square'));
         $items->push($navItem('admin.users.index', 'Users', 'ph-users'));
         $items->push($navGroup('Reports', 'ph-chart-bar', [
             ['routeName' => 'admin.reports.bookings', 'label' => 'Booking Reports'],
@@ -55,6 +56,8 @@
             ['routeName' => 'admin.settings.hours', 'label' => 'Time-of-day Groups'],
             ['routeName' => 'admin.settings.rates.index', 'label' => 'Court Rates'],
             ['routeName' => 'admin.settings.location', 'label' => 'Location'],
+            ['routeName' => 'admin.hero-images.index', 'label' => 'Hero images'],
+            ['routeName' => 'admin.gallery-images.index', 'label' => 'Album'],
         ]));
     }
 @endphp
@@ -112,12 +115,18 @@
                 >
                     <i class="ph {{ $item['icon'] }} text-lg"></i>
                     <span class="flex-1">{{ $item['label'] }}</span>
-                    @if ($item['badge'] !== null)
+                    @if ($item['routeName'] === 'admin.bookings.index' && $item['badge'] !== null)
+                        {{-- Live-polled count (see the nav's x-init above) -
+                        the only badge that needs to update without a reload. --}}
                         <span
                             x-show="pendingCount > 0"
                             x-text="pendingCount"
                             class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-semibold text-white"
                         ></span>
+                    @elseif ($item['badge'] !== null && $item['badge'] > 0)
+                        <span class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[11px] font-semibold text-white">
+                            {{ $item['badge'] }}
+                        </span>
                     @endif
                 </a>
             @endif

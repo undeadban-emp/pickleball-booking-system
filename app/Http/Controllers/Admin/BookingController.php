@@ -7,6 +7,7 @@ use App\Exceptions\NonContiguousSlotsException;
 use App\Exceptions\SlotUnavailableException;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
+use App\Models\BookingHold;
 use App\Models\BookingOrder;
 use App\Models\BookingRescheduleLog;
 use App\Models\Court;
@@ -26,15 +27,28 @@ class BookingController extends Controller
         $bookings = $this->representativeBookings()
             ->with([
                 'court', 'user:id,name,phone,email', 'slots', 'statusLogs.changedBy:id,name', 'matches', 'rescheduleLogs.changedBy:id,name',
+                // Every hold this booking has ever been through, not just an
+                // active one - the History timeline needs past (resolved)
+                // holds too, to show what time was held even after it's
+                // since been rescheduled elsewhere. Callers wanting just the
+                // currently-active hold filter this loaded collection with
+                // ->whereNull('resolved_at') rather than re-querying.
+                'holds' => fn ($q) => $q->with('fromCourt:id,name')->orderByDesc('created_at'),
                 'bookingOrder' => fn ($q) => $q->withCount('bookings'),
                 'bookingOrder.bookings' => fn ($q) => $q->orderBy('id'),
                 'bookingOrder.bookings.slots',
                 'bookingOrder.bookings.court',
                 'bookingOrder.bookings.rescheduleLogs',
-                'bookingOrder.bookings.splitFrom:id,booking_code',
+                'bookingOrder.bookings.splitFrom:id,booking_code,status',
+                'bookingOrder.bookings.splitFrom.holds' => fn ($q) => $q->whereNull('resolved_at'),
                 'bookingOrder.bookings.splitSiblings:id,booking_code,split_from_booking_id',
+                'bookingOrder.bookings.holds' => fn ($q) => $q->orderByDesc('created_at'),
             ])
-            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
+            // Held bookings have zero slots and are shown in their own
+            // "Held Bookings" list instead - only surface them here if the
+            // admin explicitly filters for them (they'd render oddly against
+            // a template built around $booking->slots->first() otherwise).
+            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')), fn ($q) => $q->where('status', '!=', 'on_hold'))
             ->when($request->filled('court_id'), fn ($q) => $q->where('court_id', $request->integer('court_id')))
             ->when($request->filled('search'), function ($q) use ($request) {
                 $term = $request->string('search');
@@ -85,6 +99,9 @@ class BookingController extends Controller
                 'matches',
                 'rescheduleLogs.changedBy:id,name',
                 'bookingOrder' => fn ($q) => $q->withCount('bookings'),
+                'splitFrom:id,booking_code,status',
+                'splitFrom.holds' => fn ($q) => $q->whereNull('resolved_at'),
+                'splitSiblings:id,booking_code,split_from_booking_id',
             ])
             ->get()
             ->sortBy(fn (Booking $b) => $b->slots->first()?->start_time)
@@ -181,7 +198,7 @@ class BookingController extends Controller
         $this->authorizeCanManageBookings();
 
         return view('admin.bookings.reschedule-select', [
-            'order' => $order->load(['bookings.slots', 'bookings.court']),
+            'order' => $order->load(['bookings.slots', 'bookings.court', 'bookings.holds' => fn ($q) => $q->whereNull('resolved_at')]),
         ]);
     }
 
@@ -198,7 +215,7 @@ class BookingController extends Controller
         abort_unless($this->isReschedulable($booking), 422, 'This booking cannot be rescheduled.');
 
         return view('admin.bookings.reschedule', [
-            'booking' => $booking->load('court', 'slots'),
+            'booking' => $booking->load(['court', 'slots', 'holds' => fn ($q) => $q->whereNull('resolved_at')]),
             'courts' => Court::where('is_active', true)->orderBy('name')->get(['id', 'name', 'status']),
             'periodBoundaries' => OperatingHours::current()->periodBoundaries(),
             'periodEnds' => OperatingHours::current()->periodEnds(),
@@ -225,7 +242,12 @@ class BookingController extends Controller
         }
 
         try {
-            $booking = $this->bookings->rescheduleBooking($booking, $court, $groups[0], Auth::user(), $data['reason'] ?? null);
+            // A held booking has no current slots to reschedule "from" - it
+            // resolves back to its pre-hold status instead of moving in
+            // place. Same destination validation either way.
+            $booking = $booking->status === 'on_hold'
+                ? $this->bookings->resolveHold($booking, $court, $groups[0], Auth::user(), $data['reason'] ?? null)
+                : $this->bookings->rescheduleBooking($booking, $court, $groups[0], Auth::user(), $data['reason'] ?? null);
         } catch (InvalidBookingTransitionException|NonContiguousSlotsException|SlotUnavailableException $e) {
             return back()->withErrors(['court_slot_ids' => $e->getMessage()])->withInput();
         }
@@ -286,6 +308,84 @@ class BookingController extends Controller
             .($remainderCount ? '; the rest stayed booked as originally scheduled ('.$result['remainder']->pluck('booking_code')->implode(', ').').' : '.');
 
         return redirect()->route('admin.bookings.index')->with('status', $status);
+    }
+
+    /**
+     * "Hold" on a multi-session order lands here first: which of the
+     * order's sessions is being held? Mirrors selectReschedule() above -
+     * each session links on to holdForm() below for that one specific
+     * booking, since a hold - like a reschedule - only ever touches one
+     * session at a time.
+     */
+    public function selectHold(BookingOrder $order)
+    {
+        $this->authorizeCanManageBookings();
+
+        return view('admin.bookings.hold-select', [
+            'order' => $order->load(['bookings.slots', 'bookings.court', 'bookings.holds' => fn ($q) => $q->whereNull('resolved_at')]),
+        ]);
+    }
+
+    /**
+     * Pick which of a confirmed booking's hours to put on hold (e.g. rain).
+     * No destination date/time is picked here - see BookingService::holdSlots().
+     */
+    public function holdForm(Booking $booking)
+    {
+        $this->authorizeCanManageBookings();
+
+        abort_unless($this->isHoldable($booking), 422, 'This booking cannot be put on hold.');
+
+        return view('admin.bookings.hold', [
+            'booking' => $booking->load('court', 'slots'),
+        ]);
+    }
+
+    public function hold(Request $request, Booking $booking)
+    {
+        $this->authorizeCanManageBookings();
+
+        $data = $request->validate([
+            'affected_court_slot_ids' => ['nullable', 'array'],
+            'affected_court_slot_ids.*' => ['integer', 'distinct', 'exists:court_slots,id'],
+            'reason' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        // Nothing selected means "hold the whole booking" - same convention
+        // updateSplitReschedule() uses for its affected-hours picker.
+        $slotIds = $data['affected_court_slot_ids'] ?? $booking->slots()->pluck('court_slots.id')->all();
+
+        if (! empty($data['affected_court_slot_ids'])) {
+            $groups = $this->bookings->groupContiguousSlotIds($slotIds);
+            if (count($groups) !== 1) {
+                return back()->withErrors(['affected_court_slot_ids' => 'Pick one contiguous block of hours to hold.'])->withInput();
+            }
+        }
+
+        try {
+            $booking = $this->bookings->holdSlots($booking, $slotIds, Auth::user(), $data['reason'] ?? null);
+        } catch (InvalidBookingTransitionException|SlotUnavailableException|\InvalidArgumentException $e) {
+            return back()->withErrors(['affected_court_slot_ids' => $e->getMessage()])->withInput();
+        }
+
+        return redirect()->route('admin.bookings.index')->with('status', "Booking {$booking->booking_code} put on hold.");
+    }
+
+    /**
+     * Sidebar "Held Bookings" list - every booking currently on hold,
+     * waiting on the admin to pick a new date/time via the same Reschedule
+     * flow used everywhere else.
+     */
+    public function holds()
+    {
+        $this->authorizeCanManageBookings();
+
+        $holds = BookingHold::whereNull('resolved_at')
+            ->with(['booking.user:id,name,phone,email', 'fromCourt:id,name', 'heldBy:id,name'])
+            ->latest('created_at')
+            ->get();
+
+        return view('admin.bookings.holds', ['holds' => $holds]);
     }
 
     /**
@@ -419,17 +519,62 @@ class BookingController extends Controller
     }
 
     /**
-     * Multi-session orders are represented by a single row (their earliest
-     * booking) wherever bookings are listed - the other sessions in the
-     * order are shown nested inside that row instead of as separate rows,
-     * so an order reads as the one purchase it actually is.
+     * Gives up on a held booking entirely instead of rescheduling it.
+     * Deliberately does NOT reuse cancel() above - that method cascades to
+     * BookingOrderService::cancel() whenever the target has an order, which
+     * cancels every OTHER (pending_payment/confirmed) booking in the order
+     * too and leaves the on_hold one itself untouched (on_hold isn't in the
+     * set of statuses that cascade touches) - exactly backwards from what
+     * "cancel this hold" means. A held booking always belongs to an order
+     * (holding creates one to link the held piece and its sibling), so that
+     * bug fired every time. This calls BookingService::cancel() directly on
+     * just the one booking, bypassing the order-wide cascade.
+     */
+    public function cancelHold(Request $request, Booking $booking)
+    {
+        $this->authorizeCanManageBookings();
+
+        $data = $request->validate(['reason' => ['nullable', 'string', 'max:255']]);
+
+        try {
+            $this->bookings->cancel($booking, Auth::user(), $data['reason'] ?? null);
+        } catch (InvalidBookingTransitionException $e) {
+            return back()->withErrors(['booking' => $e->getMessage()]);
+        }
+
+        return redirect()->route('admin.bookings.holds.index')->with('status', "Hold on {$booking->booking_code} cancelled.");
+    }
+
+    /**
+     * Multi-session orders are represented by a single row wherever bookings
+     * are listed - the other sessions in the order are shown nested inside
+     * that row instead of as separate rows, so an order reads as the one
+     * purchase it actually is. Prefers the earliest booking that ISN'T on
+     * hold - otherwise, the moment its earliest session gets held (see
+     * BookingService::holdSlots(), which always keeps the original id/code
+     * on the held piece), the whole order - including sessions still
+     * actively booked - would silently vanish from the default list the
+     * instant the representative row's own status got filtered to on_hold.
+     * Falls back to the plain earliest-id when every session in an order is
+     * on hold (nothing else to prefer).
      */
     protected function representativeBookings(): \Illuminate\Database\Eloquent\Builder
     {
         return Booking::query()->where(function ($q) {
             $q->whereNull('booking_order_id')
                 ->orWhereIn('id', function ($sub) {
-                    $sub->selectRaw('MIN(id)')->from('bookings')->whereNotNull('booking_order_id')->groupBy('booking_order_id');
+                    $sub->selectRaw('MIN(id)')
+                        ->from('bookings')
+                        ->whereNotNull('booking_order_id')
+                        ->where('status', '!=', 'on_hold')
+                        ->groupBy('booking_order_id');
+                })
+                ->orWhereIn('id', function ($sub) {
+                    $sub->selectRaw('MIN(id)')
+                        ->from('bookings')
+                        ->whereNotNull('booking_order_id')
+                        ->groupBy('booking_order_id')
+                        ->havingRaw("SUM(CASE WHEN status != 'on_hold' THEN 1 ELSE 0 END) = 0");
                 });
         });
     }
@@ -447,6 +592,13 @@ class BookingController extends Controller
      */
     protected function isReschedulable(Booking $booking): bool
     {
+        // A held booking has zero slots by design, so the usual "last slot
+        // date isn't in the past" check below doesn't apply to it - the
+        // only thing that matters is whether it's actually still on hold.
+        if ($booking->status === 'on_hold') {
+            return $booking->holds()->whereNull('resolved_at')->exists();
+        }
+
         if (! in_array($booking->status, ['pending_payment', 'confirmed'], true)) {
             return false;
         }
@@ -458,5 +610,15 @@ class BookingController extends Controller
         }
 
         return ! $booking->openPlayRoomCourt()->exists();
+    }
+
+    /**
+     * Mirrors the guard in BookingService::holdSlots() so the "Hold" button
+     * never shows up for something that would just error - only a currently
+     * confirmed booking not tied to an active Open Play room can be held.
+     */
+    protected function isHoldable(Booking $booking): bool
+    {
+        return $booking->status === 'confirmed' && ! $booking->openPlayRoomCourt()->exists();
     }
 }

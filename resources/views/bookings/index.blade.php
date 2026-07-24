@@ -5,7 +5,7 @@
         x-data="bookingsList({
             ids: [{{ $bookings->pluck('id')->implode(',') }}],
             statuses: {{ \Illuminate\Support\Js::from($displayStatuses) }},
-            hasReference: {{ \Illuminate\Support\Js::from($bookings->mapWithKeys(fn ($b) => [$b->id => filled($b->gcash_reference)])) }},
+            hasReference: {{ \Illuminate\Support\Js::from($bookings->mapWithKeys(fn ($b) => [$b->id => $b->hasSubmittedPayment()])) }},
             courts: {{ \Illuminate\Support\Js::from($bookings->mapWithKeys(fn ($b) => [$b->id => $b->court->name])) }},
             pollUrl: '{{ route('bookings.poll') }}',
         })"
@@ -28,6 +28,7 @@
                     @php
                         $isOrder = $booking->bookingOrder && $booking->bookingOrder->bookings_count > 1;
                         $firstSlot = $booking->slots->sortBy('start_time')->first();
+                        $activeHold = ! $isOrder && $booking->status === 'on_hold' ? $booking->holds->first() : null;
                     @endphp
                     <a
                         href="{{ $isOrder ? route('order.public', $booking->bookingOrder->receipt_token) : route('booking.public', $booking->receipt_token) }}"
@@ -47,6 +48,8 @@
                                 <p class="mt-0.5 text-sm text-ink-500 dark:text-ink-400">
                                     @if ($firstSlot)
                                         {{ \Illuminate\Support\Carbon::parse($firstSlot->slot_date)->format('M j, Y') }}, {{ \Illuminate\Support\Carbon::parse($firstSlot->start_time)->format('g:i A') }}
+                                    @elseif ($activeHold)
+                                        was {{ $activeHold->from_slot_date->format('M j, Y') }}, {{ \Illuminate\Support\Carbon::parse($activeHold->from_start_time)->format('g:i A') }}
                                     @endif
                                 </p>
                             @endif
