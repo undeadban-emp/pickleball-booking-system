@@ -55,6 +55,7 @@
             ['routeName' => 'admin.settings.hours', 'label' => 'Time-of-day Groups'],
             ['routeName' => 'admin.settings.rates.index', 'label' => 'Court Rates'],
             ['routeName' => 'admin.settings.location', 'label' => 'Location'],
+            ['routeName' => 'admin.settings.emails.index', 'label' => 'Emails'],
         ]));
     }
 @endphp

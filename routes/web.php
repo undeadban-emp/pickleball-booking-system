@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\CheckinController as AdminCheckinController;
 use App\Http\Controllers\Admin\ClientReportController;
 use App\Http\Controllers\Admin\CourtController as AdminCourtController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\EmailController;
 use App\Http\Controllers\Admin\GalleryImageController;
 use App\Http\Controllers\Admin\HeroImageController;
 use App\Http\Controllers\Admin\MatchController;
@@ -20,6 +21,7 @@ use App\Models\OperatingHours;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\CourtBookingController;
 use App\Http\Controllers\Customer\BookingController;
@@ -52,6 +54,17 @@ Route::middleware('guest')->group(function () {
 
     Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
     Route::post('/register', [RegisteredUserController::class, 'store'])->name('register.store');
+
+    Route::prefix('forgot-password')->group(function () {
+        Route::get('/', [ForgotPasswordController::class, 'showRequestForm'])->name('password.request');
+        Route::post('/send-code', [ForgotPasswordController::class, 'sendCode'])->name('password.send-code');
+
+        Route::get('/verify', [ForgotPasswordController::class, 'showVerifyForm'])->name('password.verify');
+        Route::post('/verify', [ForgotPasswordController::class, 'verifyCode'])->name('password.verify.submit');
+
+        Route::get('/reset', [ForgotPasswordController::class, 'showResetForm'])->name('password.reset');
+        Route::post('/reset', [ForgotPasswordController::class, 'resetPassword'])->name('password.reset.submit');
+    });
 });
 
 Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])
@@ -174,6 +187,11 @@ Route::middleware(['auth', 'role:admin,staff'])->prefix('admin')->name('admin.')
 
         Route::get('/settings/location', [SettingsController::class, 'editLocation'])->name('settings.location');
         Route::put('/settings/location', [SettingsController::class, 'updateLocation'])->name('settings.location.update');
+
+        Route::get('/settings/emails', [EmailController::class, 'index'])->name('settings.emails.index');
+        Route::post('/settings/emails', [EmailController::class, 'store'])->name('settings.emails.store');
+        Route::put('/settings/emails/{email}', [EmailController::class, 'update'])->name('settings.emails.update');
+        Route::delete('/settings/emails/{email}', [EmailController::class, 'destroy'])->name('settings.emails.destroy');
 
         Route::get('/payment-methods', [PaymentMethodController::class, 'index'])->name('payment-methods.index');
         Route::post('/payment-methods', [PaymentMethodController::class, 'store'])->name('payment-methods.store');
