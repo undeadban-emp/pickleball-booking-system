@@ -24,15 +24,17 @@ use Illuminate\Support\Facades\Route;
 // server-rendered website's browser JS (booking-calendar.js, availability-grid.js
 // via fetch()), which can't carry the Flutter app's embedded X-Jocos-Token —
 // so these stay outside the app.token gate below, same as before it existed.
-Route::get('/courts', [CourtController::class, 'index']);
-Route::get('/courts/{court}/slots', [CourtController::class, 'slots']);
-Route::get('/availability', [AvailabilityController::class, 'index']);
+Route::middleware('throttle:availability-read')->group(function () {
+    Route::get('/courts', [CourtController::class, 'index']);
+    Route::get('/courts/{court}/slots', [CourtController::class, 'slots']);
+    Route::get('/availability', [AvailabilityController::class, 'index']);
+});
 
 // Everything else requires the official Kitchen Line app header. It only
 // proves "this is our app build", not "this is a trusted user" — real
 // authorization still comes from auth:sanctum + role below. None of this is
 // touched by the website's own JS, only the Flutter app.
-Route::middleware('app.token')->group(function () {
+Route::middleware(['app.token', 'throttle:api'])->group(function () {
 
     Route::post('/auth/login', [AuthController::class, 'login']);
     Route::post('/auth/register', [AuthController::class, 'register']);

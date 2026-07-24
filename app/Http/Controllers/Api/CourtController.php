@@ -7,6 +7,7 @@ use App\Models\Court;
 use App\Models\OperatingHours;
 use App\Services\BookingService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class CourtController extends Controller
 {
@@ -44,11 +45,15 @@ class CourtController extends Controller
             $this->bookings->expireStalePending($holdMinutes, $date);
         }
 
-        $slots = $court->slots()
+        // Short-lived cache, same reasoning as AvailabilityController::index()
+        // - the actual booking submission still re-checks + locks the slot in
+        // BookingService::createBooking(), so a few seconds of staleness here
+        // can't cause a double-booking, only a "sorry, just taken" retry.
+        $slots = Cache::remember("court-slots:{$court->id}:{$date}", 4, fn () => $court->slots()
             ->where('slot_date', $date)
             ->where('status', 'available')
             ->orderBy('start_time')
-            ->get(['id', 'start_time', 'end_time', 'price', 'status']);
+            ->get(['id', 'start_time', 'end_time', 'price', 'status']));
 
         return response()
             ->json(['data' => $slots])

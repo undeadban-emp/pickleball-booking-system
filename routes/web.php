@@ -50,10 +50,10 @@ Route::get('/', function () {
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthenticatedSessionController::class, 'create'])->name('login');
-    Route::post('/login', [AuthenticatedSessionController::class, 'store']);
+    Route::post('/login', [AuthenticatedSessionController::class, 'store'])->middleware('throttle:login');
 
     Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
-    Route::post('/register', [RegisteredUserController::class, 'store'])->name('register.store');
+    Route::post('/register', [RegisteredUserController::class, 'store'])->middleware('throttle:register')->name('register.store');
 
     Route::prefix('forgot-password')->group(function () {
         Route::get('/', [ForgotPasswordController::class, 'showRequestForm'])->name('password.request');
@@ -72,26 +72,26 @@ Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])
     ->name('logout');
 
 // Guest-friendly quick booking (no account required)
-Route::post('/quick-book', [QuickBookController::class, 'store'])->name('quick-book');
+Route::post('/quick-book', [QuickBookController::class, 'store'])->middleware('throttle:booking-write')->name('quick-book');
 
 // Public booking detail/payment page, reachable by anyone holding the link
 Route::get('/b/{token}', [PublicBookingController::class, 'show'])->name('booking.public');
-Route::get('/b/{token}/status', [PublicBookingController::class, 'status'])->name('booking.public.status');
-Route::post('/b/{token}/gcash-reference', [PublicBookingController::class, 'submitReference'])->name('booking.public.gcash-reference');
-Route::post('/b/{token}/cancel', [PublicBookingController::class, 'cancel'])->name('booking.public.cancel');
+Route::get('/b/{token}/status', [PublicBookingController::class, 'status'])->middleware('throttle:status-poll')->name('booking.public.status');
+Route::post('/b/{token}/gcash-reference', [PublicBookingController::class, 'submitReference'])->middleware('throttle:payment-reference')->name('booking.public.gcash-reference');
+Route::post('/b/{token}/cancel', [PublicBookingController::class, 'cancel'])->middleware('throttle:booking-write-light')->name('booking.public.cancel');
 
 // Same, but for a multi-session checkout (BookingOrder) - one payment step
 // covering several underlying bookings, each of which still has its own
 // /b/{token} receipt/QR above.
 Route::get('/o/{token}', [PublicOrderController::class, 'show'])->name('order.public');
-Route::get('/o/{token}/status', [PublicOrderController::class, 'status'])->name('order.public.status');
-Route::post('/o/{token}/gcash-reference', [PublicOrderController::class, 'submitReference'])->name('order.public.gcash-reference');
-Route::post('/o/{token}/cancel', [PublicOrderController::class, 'cancel'])->name('order.public.cancel');
+Route::get('/o/{token}/status', [PublicOrderController::class, 'status'])->middleware('throttle:status-poll')->name('order.public.status');
+Route::post('/o/{token}/gcash-reference', [PublicOrderController::class, 'submitReference'])->middleware('throttle:payment-reference')->name('order.public.gcash-reference');
+Route::post('/o/{token}/cancel', [PublicOrderController::class, 'cancel'])->middleware('throttle:booking-write-light')->name('order.public.cancel');
 
 // Court browsing + the fuller multi-slot calendar picker
 Route::get('/book', [CourtBookingController::class, 'index'])->name('book.index');
 Route::get('/book/{court}', [CourtBookingController::class, 'show'])->name('book.show');
-Route::post('/book/{court}', [CourtBookingController::class, 'store'])->name('book.store');
+Route::post('/book/{court}', [CourtBookingController::class, 'store'])->middleware('throttle:booking-write')->name('book.store');
 
 Route::middleware('auth')->group(function () {
     Route::get('/bookings', [BookingController::class, 'index'])->name('bookings.index');

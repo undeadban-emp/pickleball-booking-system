@@ -8,6 +8,7 @@ use App\Models\CourtSlot;
 use App\Models\OperatingHours;
 use App\Services\BookingService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class AvailabilityController extends Controller
 {
@@ -32,35 +33,42 @@ class AvailabilityController extends Controller
             $this->bookings->expireStalePending($holdMinutes, $date);
         }
 
-        $courts = Court::query()
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get(['id', 'name', 'status', 'maintenance_reason']);
+        // Short-lived cache so a burst of simultaneous viewers (or a scripted
+        // poller ignoring the rate limit's spirit) doesn't turn into one full
+        // courts+slots query per request - a few seconds of staleness is an
+        // acceptable tradeoff, the same staleness window a slot already had
+        // against the once-a-minute expiry sweep before this cache existed.
+        $data = Cache::remember("availability:{$date}", 4, function () use ($date) {
+            $courts = Court::query()
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get(['id', 'name', 'status', 'maintenance_reason']);
 
-        $slotsByCourtId = CourtSlot::query()
-            ->whereIn('court_id', $courts->pluck('id'))
-            ->where('slot_date', $date)
-            ->with(['bookings' => fn ($q) => $q->whereIn('status', ['pending_payment', 'confirmed'])])
-            ->orderBy('start_time')
-            ->get()
-            ->groupBy('court_id');
+            $slotsByCourtId = CourtSlot::query()
+                ->whereIn('court_id', $courts->pluck('id'))
+                ->where('slot_date', $date)
+                ->with(['bookings' => fn ($q) => $q->whereIn('status', ['pending_payment', 'confirmed'])])
+                ->orderBy('start_time')
+                ->get()
+                ->groupBy('court_id');
 
-        $data = $courts->map(function (Court $court) use ($slotsByCourtId) {
-            $slots = $slotsByCourtId->get($court->id, collect());
+            return $courts->map(function (Court $court) use ($slotsByCourtId) {
+                $slots = $slotsByCourtId->get($court->id, collect());
 
-            return [
-                'id' => $court->id,
-                'name' => $court->name,
-                'is_under_maintenance' => $court->status === 'maintenance',
-                'maintenance_reason' => $court->maintenance_reason,
-                'slots' => $slots->map(fn (CourtSlot $slot) => [
-                    'id' => $slot->id,
-                    'start_time' => $slot->start_time,
-                    'end_time' => $slot->end_time,
-                    'price' => $slot->price,
-                    'status' => $this->displayStatus($slot),
-                ])->values(),
-            ];
+                return [
+                    'id' => $court->id,
+                    'name' => $court->name,
+                    'is_under_maintenance' => $court->status === 'maintenance',
+                    'maintenance_reason' => $court->maintenance_reason,
+                    'slots' => $slots->map(fn (CourtSlot $slot) => [
+                        'id' => $slot->id,
+                        'start_time' => $slot->start_time,
+                        'end_time' => $slot->end_time,
+                        'price' => $slot->price,
+                        'status' => $this->displayStatus($slot),
+                    ])->values(),
+                ];
+            });
         });
 
         return response()
