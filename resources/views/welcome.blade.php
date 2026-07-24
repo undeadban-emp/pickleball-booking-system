@@ -1,5 +1,24 @@
 <x-layouts.app>
 
+    @php
+        $__facebookUrl = \App\Models\OperatingHours::current()->facebook_url;
+    @endphp
+
+    @if ($__facebookUrl)
+        <a
+            href="{{ $__facebookUrl }}"
+            target="_blank"
+            rel="noopener"
+            aria-label="Visit us on Facebook"
+            class="fixed right-4 bottom-4 z-40 flex h-11 w-11 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-110 active:scale-95 sm:right-5 sm:bottom-5 sm:h-14 sm:w-14"
+        >
+            <svg viewBox="0 0 36 36" class="h-11 w-11 sm:h-14 sm:w-14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M36 18C36 8.0589 27.9411 0 18 0C8.0589 0 0 8.0589 0 18C0 26.9804 6.58128 34.4128 15.1875 35.7825V23.2031H10.6172V18H15.1875V14.0325C15.1875 9.52125 17.8759 7.03125 21.9863 7.03125C23.9547 7.03125 26.0156 7.38281 26.0156 7.38281V11.8125H23.7451C21.5081 11.8125 20.8125 13.2002 20.8125 14.625V18H25.8047L25.0079 23.2031H20.8125V35.7825C29.4187 34.4128 36 26.9804 36 18Z" fill="#1877F2"/>
+                <path d="M25.0079 23.2031L25.8047 18H20.8125V14.625C20.8125 13.2002 21.5081 11.8125 23.7451 11.8125H26.0156V7.38281C26.0156 7.38281 23.9547 7.03125 21.9863 7.03125C17.8759 7.03125 15.1875 9.52125 15.1875 14.0325V18H10.6172V23.2031H15.1875V35.7825C16.1093 35.9265 17.0483 36 18 36C18.9517 36 19.8907 35.9265 20.8125 35.7825V23.2031H25.0079Z" fill="white"/>
+            </svg>
+        </a>
+    @endif
+
     {{-- Hero: dark, badge-led, full-width image carousel background --}}
     <section class="relative overflow-hidden bg-ink-950">
         @if ($heroImages->isNotEmpty())

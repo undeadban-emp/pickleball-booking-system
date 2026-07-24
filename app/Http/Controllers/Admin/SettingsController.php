@@ -25,6 +25,7 @@ class SettingsController extends Controller
             'show_brand_text' => ['nullable', 'boolean'],
             'brand_text' => ['required', 'string', 'max:60'],
             'payment_hold_minutes' => ['nullable', 'integer', 'min:1', 'max:1440'],
+            'facebook_url' => ['nullable', 'url', 'max:255'],
         ]);
 
         $settings = OperatingHours::current();
@@ -35,6 +36,7 @@ class SettingsController extends Controller
             'show_brand_text' => $request->boolean('show_brand_text'),
             'brand_text' => $data['brand_text'],
             'payment_hold_minutes' => $data['payment_hold_minutes'] ?? null,
+            'facebook_url' => $data['facebook_url'] ?? null,
         ];
 
         if ($request->hasFile('logo')) {

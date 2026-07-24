@@ -94,6 +94,27 @@
         </div>
 
         <div class="col-span-full rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
+            <p class="text-sm font-semibold text-ink-950 dark:text-white">Facebook page</p>
+            <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">Link to your Facebook page. When set, a floating Facebook icon appears on the home page for visitors to click.</p>
+
+            <div class="mt-4 flex flex-col gap-1.5 sm:w-96">
+                <label for="facebook_url" class="text-xs font-medium text-ink-500 dark:text-ink-400">Facebook page URL</label>
+                <input
+                    id="facebook_url"
+                    name="facebook_url"
+                    type="url"
+                    value="{{ old('facebook_url', $settings->facebook_url) }}"
+                    maxlength="255"
+                    placeholder="https://facebook.com/yourpage"
+                    class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
+                >
+                @error('facebook_url')
+                    <p class="text-xs text-rose-600 dark:text-rose-400">{{ $message }}</p>
+                @enderror
+            </div>
+        </div>
+
+        <div class="col-span-full rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
             <p class="text-sm font-semibold text-ink-950 dark:text-white">Booking widget style</p>
             <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">Choose how the "Book a Court" widget appears on the home page.</p>
 
