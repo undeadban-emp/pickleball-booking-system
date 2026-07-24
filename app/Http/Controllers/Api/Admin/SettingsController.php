@@ -3,47 +3,49 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Court;
 use App\Models\OperatingHours;
+use App\Support\SlotGenerator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class SettingsController extends Controller
 {
+    /**
+     * Everything the web Settings sub-pages (General / Time-of-day Groups /
+     * Location) need, in one read - the app can hydrate all three forms off
+     * this single call rather than fetching each separately.
+     */
     public function show()
     {
         return response()->json(['data' => OperatingHours::current()]);
     }
 
+    /**
+     * "General" tab only - logo, brand text, booking widget style, payment
+     * hold window. Matches Admin\SettingsController::update() field-for-field.
+     * Hours/periods live in updateHours() below, not here - they used to be
+     * incorrectly merged into this one endpoint.
+     */
     public function update(Request $request)
     {
         $data = $request->validate([
-            // "Closes at" may be earlier in clock-time than "Morning starts" (e.g. 2am close,
-            // 6am open) - that means the venue stays open past midnight, not an error.
-            'close_time' => ['required', 'date_format:H:i'],
-            'slot_length_minutes' => ['required', 'integer', 'in:30,60,90,120'],
             'booking_widget_style' => ['required', 'in:grid,by_court'],
-            'period_morning_start' => ['required', 'date_format:H:i'],
-            'period_afternoon_start' => ['required', 'date_format:H:i'],
-            'period_evening_start' => ['required', 'date_format:H:i'],
             'logo' => ['nullable', 'image', 'max:2048'],
             'logo_height' => ['required', 'integer', 'min:16', 'max:120'],
             'show_brand_text' => ['nullable', 'boolean'],
             'brand_text' => ['required', 'string', 'max:60'],
+            'payment_hold_minutes' => ['nullable', 'integer', 'min:1', 'max:1440'],
         ]);
 
         $settings = OperatingHours::current();
 
         $updates = [
-            'open_time' => $data['period_morning_start'].':00',
-            'close_time' => $data['close_time'].':00',
-            'slot_length_minutes' => $data['slot_length_minutes'],
             'booking_widget_style' => $data['booking_widget_style'],
-            'period_morning_start' => $data['period_morning_start'].':00',
-            'period_afternoon_start' => $data['period_afternoon_start'].':00',
-            'period_evening_start' => $data['period_evening_start'].':00',
             'logo_height' => $data['logo_height'],
             'show_brand_text' => $request->boolean('show_brand_text'),
             'brand_text' => $data['brand_text'],
+            'payment_hold_minutes' => $data['payment_hold_minutes'] ?? null,
         ];
 
         if ($request->hasFile('logo')) {
@@ -67,6 +69,64 @@ class SettingsController extends Controller
             Storage::disk('public')->delete($settings->logo_path);
             $settings->update(['logo_path' => null]);
         }
+
+        return response()->json(['data' => $settings->fresh()]);
+    }
+
+    /**
+     * "Time-of-day Groups" tab - matches Admin\SettingsController::updateHours()
+     * exactly, including the open/close derivation and the immediate
+     * slot-regeneration side effect (so already-generated days move with the
+     * new hours instead of only affecting slots generated from now on).
+     */
+    public function updateHours(Request $request)
+    {
+        $data = $request->validate([
+            'slot_length_minutes' => ['required', 'integer', 'in:30,60,90,120'],
+            'period_morning_start' => ['required', 'date_format:H:i'],
+            'period_morning_end' => ['required', 'date_format:H:i'],
+            'period_afternoon_start' => ['required', 'date_format:H:i'],
+            'period_afternoon_end' => ['required', 'date_format:H:i'],
+            'period_evening_start' => ['required', 'date_format:H:i'],
+            'period_evening_end' => ['required', 'date_format:H:i'],
+        ]);
+
+        $settings = OperatingHours::current();
+
+        $settings->update([
+            'open_time' => $data['period_morning_start'].':00',
+            'close_time' => $data['period_evening_end'].':00',
+            'slot_length_minutes' => $data['slot_length_minutes'],
+            'period_morning_start' => $data['period_morning_start'].':00',
+            'period_morning_end' => $data['period_morning_end'].':00',
+            'period_afternoon_start' => $data['period_afternoon_start'].':00',
+            'period_afternoon_end' => $data['period_afternoon_end'].':00',
+            'period_evening_start' => $data['period_evening_start'].':00',
+            'period_evening_end' => $data['period_evening_end'].':00',
+        ]);
+
+        $settings = $settings->fresh();
+
+        SlotGenerator::pruneOutOfWindow($settings);
+        Court::all()->each(fn (Court $court) => SlotGenerator::generate($court, $settings));
+
+        return response()->json(['data' => $settings]);
+    }
+
+    /**
+     * "Location" tab - matches Admin\SettingsController::updateLocation().
+     */
+    public function updateLocation(Request $request)
+    {
+        $data = $request->validate([
+            'map_location' => ['nullable', 'string', 'max:150'],
+            'map_lat' => ['required', 'numeric', 'between:-90,90'],
+            'map_lng' => ['required', 'numeric', 'between:-180,180'],
+            'map_style' => ['required', 'in:standard,light,dark,satellite,terrain'],
+        ]);
+
+        $settings = OperatingHours::current();
+        $settings->update($data);
 
         return response()->json(['data' => $settings->fresh()]);
     }

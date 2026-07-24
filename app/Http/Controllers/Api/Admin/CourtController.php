@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Court;
+use App\Models\CourtSlot;
 use App\Models\OperatingHours;
 use App\Support\SlotGenerator;
 use Illuminate\Http\Request;
@@ -81,5 +82,37 @@ class CourtController extends Controller
         ]);
 
         return response()->json(['data' => $court]);
+    }
+
+    /**
+     * Settings > "Court Rates" tab - same list as index() (courts already
+     * carry default_price), kept as its own endpoint to mirror the web's
+     * separate /admin/settings/rates page and give the app a stable route
+     * name to point that screen at.
+     */
+    public function rates()
+    {
+        return response()->json(['data' => Court::orderBy('name')->get()]);
+    }
+
+    /**
+     * Matches Admin\CourtController::updateRate() - unlike the general
+     * court update() above, this also reprices already-generated but still
+     * "available" slots so the new rate takes effect immediately instead of
+     * only for slots generated after this change.
+     */
+    public function updateRate(Request $request, Court $court)
+    {
+        $data = $request->validate([
+            'default_price' => ['required', 'numeric', 'min:0'],
+        ]);
+
+        $court->update($data);
+
+        CourtSlot::where('court_id', $court->id)
+            ->where('status', 'available')
+            ->update(['price' => $court->default_price]);
+
+        return response()->json(['data' => $court->fresh()]);
     }
 }

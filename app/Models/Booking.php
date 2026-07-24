@@ -3,11 +3,13 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 class Booking extends Model
 {
@@ -51,6 +53,25 @@ class Booking extends Model
             'checked_in_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Bookings that represent money actually confirmed received - excludes
+     * pending/rejected bookings, and excludes the "old" side of a rebook
+     * (rain/reschedule) since no new money changed hands there, only the
+     * new booking it moved to should count.
+     */
+    public function scopeSales(Builder $query): Builder
+    {
+        // Columns are qualified with `bookings.` because callers often join
+        // in other tables (courts, payment_methods, ...) that also have a
+        // `status` column - unqualified would throw "ambiguous column".
+        return $query
+            ->where(function (Builder $q) {
+                $q->whereIn('bookings.status', ['confirmed', 'completed'])
+                    ->orWhere(fn (Builder $q2) => $q2->where('bookings.status', 'cancelled')->whereHas('rebookedTo'));
+            })
+            ->whereNull('bookings.rebooked_from_id');
     }
 
     public function user(): BelongsTo
@@ -185,6 +206,57 @@ class Booking extends Model
     public function isGuestBooking(): bool
     {
         return $this->user_id === null;
+    }
+
+    /**
+     * One display-ready "M j, Y, g:i A to g:i A" line per booked slot.
+     * Expects `slots` to already be eager-loaded (ordered by start_time) -
+     * used by every API surface that shows a booking's court time to a
+     * human (customer app, staff check-in prompt), so the formatting only
+     * lives in one place.
+     */
+    public function scheduleLines(): array
+    {
+        return $this->slots
+            ->map(fn (CourtSlot $slot) => sprintf(
+                '%s, %s to %s',
+                $slot->slot_date->format('M j, Y'),
+                Carbon::parse($slot->start_time)->format('g:i A'),
+                Carbon::parse($slot->end_time)->format('g:i A'),
+            ))
+            ->all();
+    }
+
+    public function statusLabel(): string
+    {
+        return static::labelForStatus($this->status);
+    }
+
+    public static function labelForStatus(string $status): string
+    {
+        return ucwords(str_replace('_', ' ', $status));
+    }
+
+    /**
+     * Flat, display-ready fields shared by every API listing/detail
+     * response that shows a booking summary - formatted server-side so
+     * clients never reformat a 24h time string or guess at a status label.
+     * Expects `court` and `slots` to already be eager-loaded.
+     */
+    public function toSummaryArray(): array
+    {
+        return [
+            'id' => $this->id,
+            'reference' => $this->booking_code,
+            'status' => $this->status,
+            'status_label' => $this->statusLabel(),
+            'customer' => $this->contactName(),
+            'phone' => $this->contactPhone(),
+            'email' => $this->contactEmail(),
+            'court' => $this->court->name,
+            'schedule' => $this->scheduleLines(),
+            'total' => $this->total_price,
+        ];
     }
 
     public function paymentProofUrl(): ?string

@@ -45,6 +45,11 @@
         $items->push($navItem('admin.hero-images.index', 'Hero images', 'ph-image'));
         $items->push($navItem('admin.gallery-images.index', 'Album', 'ph-images-square'));
         $items->push($navItem('admin.users.index', 'Users', 'ph-users'));
+        $items->push($navGroup('Reports', 'ph-chart-bar', [
+            ['routeName' => 'admin.reports.bookings', 'label' => 'Booking Reports'],
+            ['routeName' => 'admin.reports.revenue', 'label' => 'Revenue & Finance Reports'],
+            ['routeName' => 'admin.reports.clients', 'label' => 'Client Reports'],
+        ]));
         $items->push($navGroup('Settings', 'ph-gear-six', [
             ['routeName' => 'admin.settings.edit', 'label' => 'General'],
             ['routeName' => 'admin.settings.hours', 'label' => 'Time-of-day Groups'],

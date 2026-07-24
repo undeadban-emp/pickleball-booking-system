@@ -16,11 +16,12 @@ class BookingController extends Controller
     public function index(Request $request)
     {
         return Booking::query()
-            ->with(['court', 'user:id,name,phone', 'slots'])
+            ->with(['court:id,name', 'user:id,name,phone,email', 'slots' => fn ($q) => $q->orderBy('start_time')])
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('court_id'), fn ($q) => $q->where('court_id', $request->integer('court_id')))
             ->latest()
-            ->paginate(20);
+            ->paginate(20)
+            ->through(fn (Booking $booking) => $booking->toSummaryArray());
     }
 
     public function latest(Request $request)

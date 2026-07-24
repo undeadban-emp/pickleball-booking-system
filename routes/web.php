@@ -1,7 +1,9 @@
 <?php
 
 use App\Http\Controllers\Admin\BookingController as AdminBookingController;
+use App\Http\Controllers\Admin\BookingReportController;
 use App\Http\Controllers\Admin\CheckinController as AdminCheckinController;
+use App\Http\Controllers\Admin\ClientReportController;
 use App\Http\Controllers\Admin\CourtController as AdminCourtController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\GalleryImageController;
@@ -10,6 +12,7 @@ use App\Http\Controllers\Admin\MatchController;
 use App\Http\Controllers\Admin\MatchGameController;
 use App\Http\Controllers\Admin\PaymentMethodController;
 use App\Http\Controllers\OpenPlayController;
+use App\Http\Controllers\Admin\RevenueReportController;
 use App\Models\Court;
 use App\Models\GalleryImage;
 use App\Models\HeroImage;
@@ -192,5 +195,14 @@ Route::middleware(['auth', 'role:admin,staff'])->prefix('admin')->name('admin.')
 
         Route::get('/users', [AdminUserController::class, 'index'])->name('users.index');
         Route::post('/users', [AdminUserController::class, 'store'])->name('users.store');
+        Route::get('/reports/bookings', [BookingReportController::class, 'index'])->name('reports.bookings');
+        Route::get('/reports/bookings/export', [BookingReportController::class, 'export'])->name('reports.bookings.export');
+        Route::get('/reports/bookings/pdf', [BookingReportController::class, 'pdf'])->name('reports.bookings.pdf');
+        Route::get('/reports/revenue', [RevenueReportController::class, 'index'])->name('reports.revenue');
+        Route::get('/reports/revenue/export', [RevenueReportController::class, 'export'])->name('reports.revenue.export');
+        Route::get('/reports/revenue/pdf', [RevenueReportController::class, 'pdf'])->name('reports.revenue.pdf');
+        Route::get('/reports/clients', [ClientReportController::class, 'index'])->name('reports.clients');
+        Route::get('/reports/clients/export', [ClientReportController::class, 'export'])->name('reports.clients.export');
+        Route::get('/reports/clients/pdf', [ClientReportController::class, 'pdf'])->name('reports.clients.pdf');
     });
 });
