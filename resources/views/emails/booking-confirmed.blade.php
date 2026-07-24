@@ -4,7 +4,7 @@
     $__brandName = $__brand->show_brand_text ? $__brand->brand_text : config('app.name');
     $__facebookUrl = $__brand->facebook_url;
     $__slots = $booking->slots->sortBy('start_time')->values();
-    $__qrSvg = $booking->checkinQrSvg();
+    $__qrUrl = $booking->checkinQrUrl();
 @endphp
 <!DOCTYPE html>
 <html>
@@ -109,13 +109,13 @@
         </table>
     </td></tr>
 
-    @if ($__qrSvg)
+    @if ($__qrUrl)
         <tr><td align="center" style="padding:32px 40px 0;">
             <h2 style="margin:0 0 6px;color:#111111;font-size:18px;font-weight:700;">Show this code at the gate</h2>
             <p style="margin:0 0 20px;font-size:13px;color:#6b7280;line-height:1.6;">Show this QR code to the receptionist when you arrive — no need for a data connection.</p>
             <table role="presentation" cellpadding="0" cellspacing="0" style="background:#eef2fb;border-radius:12px;">
                 <tr><td style="padding:20px;">
-                    {!! $__qrSvg !!}
+                    <img src="{{ $__qrUrl }}" width="200" height="200" alt="Booking QR Code" style="display:block;width:200px;height:200px;border-radius:6px;">
                 </td></tr>
             </table>
             <p style="margin:14px 0 4px;font-size:13px;color:#9ca3af;">Booking Ref: <strong style="color:#333333;">{{ $booking->booking_code }}</strong></p>

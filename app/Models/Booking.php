@@ -10,7 +10,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
-use SimpleSoftwareIO\QrCode\Facades\QrCode;
+use Illuminate\Support\Facades\Storage;
+use BaconQrCode\Common\ErrorCorrectionLevel;
+use BaconQrCode\Encoder\Encoder;
 
 class Booking extends Model
 {
@@ -276,21 +278,65 @@ class Booking extends Model
     }
 
     /**
-     * Inline SVG markup for the check-in QR, encoding this booking's
-     * `checkin_token` (same value the front-desk scanner expects - see
-     * BookingService::checkIn()) - same generate() call already used on the
-     * public booking page. SVG rather than PNG: this server has no Imagick
-     * extension, which simple-qrcode's PNG backend requires; GD isn't a
-     * supported backend for this package, so PNG isn't available here. Null
-     * until the booking is confirmed and has a token to encode.
+     * Public URL for a PNG check-in QR encoding this booking's `checkin_token`
+     * (same value the front-desk scanner expects - see
+     * BookingService::checkIn()), generated once and cached on the public
+     * disk since the token doesn't change after approve() sets it.
+     *
+     * Rendered as a real PNG file (not inline SVG/data-URI) because most
+     * email clients (Gmail, Outlook, etc.) strip <svg> tags from HTML email
+     * bodies - a real image URL is the only option that reliably displays
+     * everywhere. simple-qrcode's PNG backend needs the Imagick extension,
+     * which this server doesn't have, so this rasterizes the QR matrix
+     * directly with GD (already installed) using bacon-qr-code's low-level
+     * encoder (a transitive dependency of simple-qrcode already in use).
+     * Null until the booking is confirmed and has a token to encode.
      */
-    public function checkinQrSvg(): ?string
+    public function checkinQrUrl(): ?string
     {
         if (! $this->checkin_token) {
             return null;
         }
 
-        return QrCode::format('svg')->size(200)->generate($this->checkin_token);
+        $path = 'booking-qr/'.$this->checkin_token.'.png';
+
+        if (! Storage::disk('public')->exists($path)) {
+            Storage::disk('public')->put($path, $this->renderCheckinQrPng());
+        }
+
+        return asset('storage/'.$path);
+    }
+
+    protected function renderCheckinQrPng(): string
+    {
+        $matrix = Encoder::encode($this->checkin_token, ErrorCorrectionLevel::M())->getMatrix();
+        $moduleCount = $matrix->getWidth();
+
+        $moduleSize = 8;
+        $quietZone = 4;
+        $imageSize = ($moduleCount + $quietZone * 2) * $moduleSize;
+
+        $image = imagecreatetruecolor($imageSize, $imageSize);
+        $white = imagecolorallocate($image, 255, 255, 255);
+        $black = imagecolorallocate($image, 0, 0, 0);
+        imagefilledrectangle($image, 0, 0, $imageSize, $imageSize, $white);
+
+        for ($y = 0; $y < $moduleCount; $y++) {
+            for ($x = 0; $x < $moduleCount; $x++) {
+                if ($matrix->get($x, $y) === 1) {
+                    $px = ($x + $quietZone) * $moduleSize;
+                    $py = ($y + $quietZone) * $moduleSize;
+                    imagefilledrectangle($image, $px, $py, $px + $moduleSize - 1, $py + $moduleSize - 1, $black);
+                }
+            }
+        }
+
+        ob_start();
+        imagepng($image);
+        $png = ob_get_clean();
+        imagedestroy($image);
+
+        return $png;
     }
 
     /**
