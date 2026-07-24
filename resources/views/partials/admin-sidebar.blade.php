@@ -58,6 +58,7 @@
             ['routeName' => 'admin.settings.location', 'label' => 'Location'],
             ['routeName' => 'admin.hero-images.index', 'label' => 'Hero images'],
             ['routeName' => 'admin.gallery-images.index', 'label' => 'Album'],
+            ['routeName' => 'admin.settings.emails.index', 'label' => 'Emails'],
         ]));
     }
 @endphp

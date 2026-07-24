@@ -43,7 +43,10 @@
             </div>
 
             <div class="flex flex-col gap-1.5">
-                <label for="password" class="text-sm font-medium text-ink-800 dark:text-ink-200">Password</label>
+                <div class="flex items-center justify-between">
+                    <label for="password" class="text-sm font-medium text-ink-800 dark:text-ink-200">Password</label>
+                    <a href="{{ route('password.request') }}" class="text-xs font-semibold text-ink-600 underline hover:text-ink-900 dark:text-ink-400 dark:hover:text-white">Forgot password?</a>
+                </div>
                 <div class="relative">
                     <input
                         id="password"
