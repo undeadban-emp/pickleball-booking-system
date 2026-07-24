@@ -9,6 +9,8 @@
 
         <title>{{ isset($title) ? $title.' — Admin' : 'Admin' }} · Kitchen Line</title>
 
+        <link rel="icon" href="{{ \App\Models\OperatingHours::current()->logoUrl() ?? asset('favicon.ico') }}">
+
         @fonts
 
         @vite(['resources/css/app.css', 'resources/js/app.js'])

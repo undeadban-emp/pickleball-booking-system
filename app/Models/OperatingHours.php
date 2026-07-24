@@ -29,6 +29,7 @@ class OperatingHours extends Model
         'map_lat',
         'map_lng',
         'map_style',
+        'facebook_url',
     ];
 
     protected function casts(): array

@@ -9,6 +9,8 @@
         <title>{{ $title ?? config('app.name') }}</title>
         <meta name="description" content="{{ $description ?? 'Book pickleball courts by the hour. Pick a time, pay by GCash, show your code at the door.' }}">
 
+        <link rel="icon" href="{{ \App\Models\OperatingHours::current()->logoUrl() ?? asset('favicon.ico') }}">
+
         @fonts
 
         @vite(['resources/css/app.css', 'resources/js/app.js'])
