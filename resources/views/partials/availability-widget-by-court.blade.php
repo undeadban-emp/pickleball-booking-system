@@ -198,7 +198,7 @@
                                                         type="button"
                                                         @click="pickCell(court, time)"
                                                         :disabled="!slotFor(court, time) || (slotFor(court, time).status !== 'available' && !isSelected(court, time))"
-                                                        class="rounded-lg border px-1.5 py-2 text-sm font-bold transition-colors"
+                                                        class="min-w-0 rounded-lg border px-1.5 py-2 text-base font-extrabold wrap-break-word transition-colors"
                                                         :class="cellClass(court, time)"
                                                         x-text="slotFor(court, time) ? cellLabel(time, court) : ''"
                                                     ></button>
@@ -242,7 +242,7 @@
                                                             type="button"
                                                             @click="pickCell(court, time)"
                                                             :disabled="!slotFor(court, time) || (slotFor(court, time).status !== 'available' && !isSelected(court, time))"
-                                                            class="w-full rounded-lg border px-2 py-2.5 text-base font-bold transition-colors"
+                                                            class="w-full rounded-lg border px-2 py-2.5 text-base font-extrabold transition-colors"
                                                             :class="cellClass(court, time)"
                                                             x-text="slotFor(court, time) ? cellLabel(time, court) : ''"
                                                         ></button>
