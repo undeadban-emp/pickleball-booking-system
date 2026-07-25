@@ -78,6 +78,7 @@ Route::middleware(['app.token', 'throttle:api'])->group(function () {
         Route::prefix('admin')->group(function () {
             Route::get('/bookings', [AdminBookingController::class, 'index']);
             Route::get('/bookings/latest', [AdminBookingController::class, 'latest']);
+            Route::get('/bookings/{booking}', [AdminBookingController::class, 'show']);
             Route::get('/schedule', [AdminScheduleController::class, 'index']);
         });
 
