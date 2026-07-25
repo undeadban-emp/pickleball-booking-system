@@ -117,10 +117,14 @@
             A complete, well-kept facility designed for comfort and serious play.
         </p>
 
+        @php
+            $__hours = \App\Models\OperatingHours::current();
+            $__openLabel = 'Open '.\Illuminate\Support\Carbon::parse($__hours->open_time)->format('g:ia').' to '.\Illuminate\Support\Carbon::parse($__hours->close_time)->format('g:ia');
+        @endphp
         <div class="mt-8 grid grid-cols-2 gap-6 rounded-3xl border border-ink-100 bg-white p-6 sm:grid-cols-3 sm:gap-8 sm:p-8 lg:grid-cols-6 dark:border-ink-800 dark:bg-ink-900">
             @foreach ([
                 ['icon' => 'ph-tennis-ball', 'label' => '1 Outdoor Court'],
-                ['icon' => 'ph-clock', 'label' => 'Open 6am to 12pm'],
+                ['icon' => 'ph-clock', 'label' => $__openLabel],
                 ['icon' => 'ph-drop', 'label' => 'Restrooms'],
                 ['icon' => 'ph-armchair', 'label' => 'Lounge Area'],
                 ['icon' => 'ph-video-camera', 'label' => 'CCTV Monitored'],
@@ -182,9 +186,36 @@
                 var lng = {{ $mapLng }};
                 var style = window.MAP_STYLES[@js($mapStyle)] || window.MAP_STYLES.standard;
 
-                var map = L.map('home-map', { scrollWheelZoom: true, touchZoom: true, tap: true }).setView([lat, lng], 15);
+                // Zoom only via the +/- control - no scroll-wheel or
+                // double-click zoom, so scrolling the page over the map (or
+                // an accidental double-tap) doesn't hijack it.
+                var map = L.map('home-map', {
+                    scrollWheelZoom: false,
+                    doubleClickZoom: false,
+                    boxZoom: false,
+                    touchZoom: true,
+                    dragging: !L.Browser.mobile,
+                    tap: true,
+                }).setView([lat, lng], 15);
                 L.tileLayer(style.url, style).addTo(map);
                 L.marker([lat, lng]).addTo(map)@if($mapLabel).bindPopup(@js($mapLabel))@endif;
+
+                // On touch devices, a one-finger swipe should scroll the
+                // page like normal instead of dragging the map - only
+                // engage map panning once a second finger joins (pinch-zoom
+                // itself is unaffected, it's a separate touchZoom handler).
+                if (L.Browser.mobile) {
+                    map.on('touchstart', function (e) {
+                        if (e.originalEvent.touches.length >= 2) {
+                            map.dragging.enable();
+                        }
+                    });
+                    map.on('touchend', function (e) {
+                        if (e.originalEvent.touches.length < 2) {
+                            map.dragging.disable();
+                        }
+                    });
+                }
             })();
         </script>
     @elseif ($mapLabel)

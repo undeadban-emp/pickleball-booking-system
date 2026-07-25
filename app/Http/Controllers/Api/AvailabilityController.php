@@ -38,7 +38,13 @@ class AvailabilityController extends Controller
         // courts+slots query per request - a few seconds of staleness is an
         // acceptable tradeoff, the same staleness window a slot already had
         // against the once-a-minute expiry sweep before this cache existed.
-        $data = Cache::remember("availability:{$date}", 4, function () use ($date) {
+        // Explicitly the 'file' store (not the app's default 'database'
+        // store) - the underlying queries here are already sub-millisecond,
+        // so writing through the database cache table (an extra MySQL
+        // INSERT ... ON DUPLICATE KEY UPDATE per miss) cost more than it
+        // saved and could even serialize against a near-simultaneous
+        // background poll hitting the same cache row.
+        $data = Cache::store('file')->remember("availability:{$date}", 4, function () use ($date) {
             $courts = Court::query()
                 ->where('is_active', true)
                 ->orderBy('name')
@@ -52,6 +58,11 @@ class AvailabilityController extends Controller
                 ->get()
                 ->groupBy('court_id');
 
+            // Plain array, not a Collection - the database cache driver
+            // serializes via PHP's serialize()/unserialize(), which chokes
+            // on nested Collection objects (comes back as an unusable
+            // __PHP_Incomplete_Class_Name on the next cache hit). A plain
+            // array round-trips cleanly.
             return $courts->map(function (Court $court) use ($slotsByCourtId) {
                 $slots = $slotsByCourtId->get($court->id, collect());
 
@@ -66,9 +77,9 @@ class AvailabilityController extends Controller
                         'end_time' => $slot->end_time,
                         'price' => $slot->price,
                         'status' => $this->displayStatus($slot),
-                    ])->values(),
+                    ])->values()->all(),
                 ];
-            });
+            })->values()->all();
         });
 
         return response()

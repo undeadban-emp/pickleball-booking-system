@@ -23,14 +23,16 @@ class RegisteredUserController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
-            'phone' => ['nullable', 'string', 'max:30'],
+            'phone' => ['required', 'string', 'regex:/^(09\d{9}|\+639\d{9})$/'],
             'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
+        ], [
+            'phone.regex' => 'Enter a valid PH mobile number, e.g. 09171234567 or +639171234567.',
         ]);
 
         $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
-            'phone' => $data['phone'] ?? null,
+            'phone' => $data['phone'],
             'password' => Hash::make($data['password']),
             'role' => 'customer',
         ]);

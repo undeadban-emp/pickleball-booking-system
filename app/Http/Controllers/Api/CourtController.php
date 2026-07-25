@@ -49,11 +49,18 @@ class CourtController extends Controller
         // - the actual booking submission still re-checks + locks the slot in
         // BookingService::createBooking(), so a few seconds of staleness here
         // can't cause a double-booking, only a "sorry, just taken" retry.
-        $slots = Cache::remember("court-slots:{$court->id}:{$date}", 4, fn () => $court->slots()
+        // Cached as a plain array, not an Eloquent Collection - the database
+        // cache driver's serialize()/unserialize() round-trip doesn't play
+        // well with model/Collection objects (see AvailabilityController).
+        // Uses the 'file' store rather than the app's default 'database'
+        // store, since the underlying query is already sub-millisecond and
+        // writing through a MySQL table per cache miss cost more than it saved.
+        $slots = Cache::store('file')->remember("court-slots:{$court->id}:{$date}", 4, fn () => $court->slots()
             ->where('slot_date', $date)
             ->where('status', 'available')
             ->orderBy('start_time')
-            ->get(['id', 'start_time', 'end_time', 'price', 'status']));
+            ->get(['id', 'start_time', 'end_time', 'price', 'status'])
+            ->toArray());
 
         return response()
             ->json(['data' => $slots])

@@ -35,7 +35,7 @@
 
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div class="flex flex-col gap-1.5">
-                    <label for="name" class="text-sm font-medium text-ink-800 dark:text-ink-200">Full Name</label>
+                    <label for="name" class="text-sm font-medium text-ink-800 dark:text-ink-200">Full Name <span class="text-rose-500">*</span></label>
                     <input
                         id="name"
                         type="text"
@@ -53,12 +53,15 @@
                 </div>
 
                 <div class="flex flex-col gap-1.5">
-                    <label for="phone" class="text-sm font-medium text-ink-800 dark:text-ink-200">Phone <span class="font-normal text-ink-400">(optional)</span></label>
+                    <label for="phone" class="text-sm font-medium text-ink-800 dark:text-ink-200">Phone <span class="text-rose-500">*</span></label>
                     <input
                         id="phone"
                         type="tel"
                         name="phone"
                         value="{{ old('phone') }}"
+                        required
+                        pattern="^(09\d{9}|\+639\d{9})$"
+                        title="Enter a valid PH mobile number, e.g. 09171234567 or +639171234567"
                         autocomplete="tel"
                         class="w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-sm text-ink-950 placeholder:text-ink-400 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-white dark:focus:ring-accent-900"
                         placeholder="09XX XXX XXXX"
@@ -70,7 +73,7 @@
             </div>
 
             <div class="flex flex-col gap-1.5">
-                <label for="email" class="text-sm font-medium text-ink-800 dark:text-ink-200">Email Address</label>
+                <label for="email" class="text-sm font-medium text-ink-800 dark:text-ink-200">Email Address <span class="text-rose-500">*</span></label>
                 <input
                     id="email"
                     type="email"
@@ -88,7 +91,7 @@
 
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div class="flex flex-col gap-1.5">
-                    <label for="password" class="text-sm font-medium text-ink-800 dark:text-ink-200">Password</label>
+                    <label for="password" class="text-sm font-medium text-ink-800 dark:text-ink-200">Password <span class="text-rose-500">*</span></label>
                     <div class="relative">
                         <input
                             id="password"
@@ -110,7 +113,7 @@
                 </div>
 
                 <div class="flex flex-col gap-1.5">
-                    <label for="password_confirmation" class="text-sm font-medium text-ink-800 dark:text-ink-200">Confirm Password</label>
+                    <label for="password_confirmation" class="text-sm font-medium text-ink-800 dark:text-ink-200">Confirm Password <span class="text-rose-500">*</span></label>
                     <div class="relative">
                         <input
                             id="password_confirmation"
