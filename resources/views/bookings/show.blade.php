@@ -299,7 +299,17 @@
                                     <span class="text-xs text-ink-500 dark:text-ink-400" x-text="selected?.account_name || 'Kitchen Line'"></span>
                                 </div>
                                 <template x-if="selected?.qr_url">
-                                    <img :src="selected.qr_url" alt="Payment QR code" class="mx-auto mt-3 w-40 rounded-xl border border-ink-100 dark:border-ink-800">
+                                    <div class="mx-auto mt-3 w-40">
+                                        <img :src="selected.qr_url" alt="Payment QR code" class="w-40 rounded-xl border border-ink-100 dark:border-ink-800">
+                                        <a
+                                            :href="selected.qr_url"
+                                            :download="(selected.name || 'payment') + '-qr.png'"
+                                            class="mt-2 flex items-center justify-center gap-1.5 rounded-full border border-ink-200 px-3 py-1.5 text-xs font-semibold text-ink-700 transition-colors hover:border-accent-400 hover:text-accent-700 dark:border-ink-700 dark:text-ink-200"
+                                        >
+                                            <i class="ph ph-download-simple text-sm"></i>
+                                            Download QR
+                                        </a>
+                                    </div>
                                 </template>
                                 <template x-if="selected?.instructions">
                                     <p class="mt-3 text-xs text-ink-500 dark:text-ink-400" x-text="selected.instructions"></p>
