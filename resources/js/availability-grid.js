@@ -419,6 +419,15 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
             return m === '00' ? `${displayHour}${suffix}` : `${displayHour}:${m}${suffix}`;
         },
 
+        courtRateLabel(court) {
+            const prices = court.slots.map((s) => parseFloat(s.price)).filter((p) => !isNaN(p));
+            if (prices.length === 0) return '';
+
+            const min = Math.min(...prices);
+            const max = Math.max(...prices);
+            return min === max ? `₱${min.toFixed(0)}/hr` : `₱${min.toFixed(0)}–₱${max.toFixed(0)}/hr`;
+        },
+
         cellLabel(time, court) {
             const slot = this.slotFor(court, time);
             const end = slot ? this.formatTime(slot.end_time) : '';

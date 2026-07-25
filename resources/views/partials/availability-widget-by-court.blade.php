@@ -146,10 +146,10 @@
                 </span>
             </div>
 
-            <div class="mt-3 flex flex-wrap items-center gap-4 text-xs text-ink-500 dark:text-ink-400">
-                <span class="flex items-center gap-1.5"><i class="ph ph-check-circle text-sm text-sky-500"></i> Available</span>
-                <span class="flex items-center gap-1.5"><i class="ph ph-clock text-sm text-amber-500"></i> Pending payment</span>
-                <span class="flex items-center gap-1.5"><i class="ph ph-x-circle text-sm text-rose-500"></i> Booked</span>
+            <div class="mt-3 flex flex-wrap items-center gap-4 text-sm font-bold text-ink-600 dark:text-ink-300">
+                <span class="flex items-center gap-1.5"><i class="ph ph-check-circle text-lg text-sky-500"></i> Available</span>
+                <span class="flex items-center gap-1.5"><i class="ph ph-clock text-lg text-amber-500"></i> Pending payment</span>
+                <span class="flex items-center gap-1.5"><i class="ph ph-x-circle text-lg text-rose-500"></i> Booked</span>
             </div>
 
             <template x-if="warning">
@@ -172,14 +172,53 @@
                             <span x-text="selectedDateLabel"></span>
                         </div>
 
-                        <div class="p-3 sm:p-4">
+                        {{-- Mobile: each period is its own full-width, sequential
+                        section (Morning, then Afternoon, then Evening), with its
+                        times in a wrapping grid - same pattern as the single-court
+                        booking page. Swaps out entirely for the side-by-side
+                        columns layout from sm: up (see the hidden sm:block variant
+                        below), since 3 columns read fine at that width. --}}
+                        <div class="p-3 sm:hidden">
+                            <template x-for="court in courts" :key="'m-' + court.id">
+                                <div class="mb-5 last:mb-0">
+                                    <div class="flex items-center justify-between gap-2 border-l-2 border-accent-400 pl-2">
+                                        <p class="min-w-0 truncate text-xs font-semibold tracking-wide text-ink-700 uppercase dark:text-ink-300" x-text="court.name"></p>
+                                        <p class="shrink-0 text-sm font-bold text-accent-700 dark:text-accent-400" x-text="courtRateLabel(court)"></p>
+                                    </div>
+
+                                    <template x-for="period in periods" :key="court.id + '-m-' + period.key">
+                                        <div class="mt-3">
+                                            <p class="flex items-center gap-1.5 text-xs font-bold text-ink-700 uppercase dark:text-ink-200">
+                                                <i class="ph" :class="period.icon"></i>
+                                                <span x-text="period.label"></span>
+                                            </p>
+                                            <div class="mt-2 grid grid-cols-2 gap-1.5">
+                                                <template x-for="time in period.times" :key="court.id + '-m-' + time">
+                                                    <button
+                                                        type="button"
+                                                        @click="pickCell(court, time)"
+                                                        :disabled="!slotFor(court, time) || (slotFor(court, time).status !== 'available' && !isSelected(court, time))"
+                                                        class="rounded-lg border px-1.5 py-2 text-sm font-bold transition-colors"
+                                                        :class="cellClass(court, time)"
+                                                        x-text="slotFor(court, time) ? cellLabel(time, court) : ''"
+                                                    ></button>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div class="hidden p-3 sm:block sm:p-4">
                             <div class="sm:min-w-140">
-                                {{-- Period header row --}}
-                                <div class="flex gap-1.5 sm:gap-3">
-                                    <div class="w-12 shrink-0 sm:w-28"></div>
-                                    <div class="grid flex-1 gap-1.5 sm:gap-3" :style="`grid-template-columns: repeat(${periods.length}, minmax(0,1fr))`">
+                                {{-- Period header row. Always exactly 3 periods
+                                (morning/afternoon/evening). --}}
+                                <div class="flex gap-3">
+                                    <div class="w-28 shrink-0"></div>
+                                    <div class="grid flex-1 grid-cols-3 gap-3">
                                         <template x-for="period in periods" :key="'h-' + period.key">
-                                            <p class="flex items-center justify-center gap-1 text-[10px] font-semibold text-ink-500 uppercase sm:justify-start sm:gap-1.5 sm:text-xs dark:text-ink-400">
+                                            <p class="flex items-center gap-1.5 text-lg font-extrabold text-ink-700 uppercase dark:text-ink-200">
                                                 <i class="ph" :class="period.icon"></i>
                                                 <span class="truncate" x-text="period.label"></span>
                                             </p>
@@ -189,20 +228,21 @@
 
                                 {{-- Court row groups --}}
                                 <template x-for="court in courts" :key="court.id">
-                                    <div class="mt-4 flex gap-1.5 border-t border-ink-100 pt-4 first:mt-3 first:border-t-0 first:pt-0 sm:gap-3 dark:border-ink-800">
-                                        <div class="flex w-12 shrink-0 items-center border-l-2 border-accent-400 pl-1.5 sm:w-28 sm:pl-3">
-                                            <p class="truncate text-[10px] font-semibold tracking-wide text-ink-700 uppercase sm:text-xs dark:text-ink-300" x-text="court.name"></p>
+                                    <div class="mt-4 flex gap-3 border-t border-ink-100 pt-4 first:mt-3 first:border-t-0 first:pt-0 dark:border-ink-800">
+                                        <div class="flex w-28 shrink-0 flex-col justify-center gap-0.5 border-l-2 border-accent-400 pl-3">
+                                            <p class="truncate text-xs font-semibold tracking-wide text-ink-700 uppercase dark:text-ink-300" x-text="court.name"></p>
+                                            <p class="truncate text-sm font-bold text-accent-700 dark:text-accent-400" x-text="courtRateLabel(court)"></p>
                                         </div>
 
-                                        <div class="grid flex-1 gap-1.5 sm:gap-3" :style="`grid-template-columns: repeat(${periods.length}, minmax(0,1fr))`">
+                                        <div class="grid flex-1 grid-cols-3 gap-3">
                                             <template x-for="period in periods" :key="court.id + '-' + period.key">
-                                                <div class="space-y-1.5 sm:space-y-2">
+                                                <div class="space-y-2">
                                                     <template x-for="time in period.times" :key="court.id + '-' + time">
                                                         <button
                                                             type="button"
                                                             @click="pickCell(court, time)"
                                                             :disabled="!slotFor(court, time) || (slotFor(court, time).status !== 'available' && !isSelected(court, time))"
-                                                            class="w-full rounded-lg border px-1 py-1.5 text-[10px] font-medium transition-colors sm:px-2 sm:py-2 sm:text-xs"
+                                                            class="w-full rounded-lg border px-2 py-2.5 text-base font-bold transition-colors"
                                                             :class="cellClass(court, time)"
                                                             x-text="slotFor(court, time) ? cellLabel(time, court) : ''"
                                                         ></button>

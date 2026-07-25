@@ -146,10 +146,10 @@
                 </span>
             </div>
 
-            <div class="mt-3 flex flex-wrap items-center gap-4 text-xs text-ink-500 dark:text-ink-400">
-                <span class="flex items-center gap-1.5"><i class="ph ph-check-circle text-sm text-sky-500"></i> Available</span>
-                <span class="flex items-center gap-1.5"><i class="ph ph-clock text-sm text-amber-500"></i> Pending payment</span>
-                <span class="flex items-center gap-1.5"><i class="ph ph-x-circle text-sm text-rose-500"></i> Booked</span>
+            <div class="mt-3 flex flex-wrap items-center gap-4 text-sm font-bold text-ink-600 dark:text-ink-300">
+                <span class="flex items-center gap-1.5"><i class="ph ph-check-circle text-lg text-sky-500"></i> Available</span>
+                <span class="flex items-center gap-1.5"><i class="ph ph-clock text-lg text-amber-500"></i> Pending payment</span>
+                <span class="flex items-center gap-1.5"><i class="ph ph-x-circle text-lg text-rose-500"></i> Booked</span>
             </div>
 
             <template x-if="warning">
@@ -184,7 +184,7 @@
                                 {{-- Period groups --}}
                                 <template x-for="period in periods" :key="period.key">
                                     <div class="mt-4">
-                                        <p class="flex items-center gap-1.5 text-xs font-semibold text-ink-400 uppercase dark:text-ink-500">
+                                        <p class="flex items-center gap-1.5 text-sm font-bold text-ink-700 uppercase sm:text-lg sm:font-extrabold dark:text-ink-200">
                                             <i class="ph" :class="period.icon"></i>
                                             <span x-text="period.label"></span>
                                         </p>
@@ -196,7 +196,7 @@
                                                             type="button"
                                                             @click="pickCell(court, time)"
                                                             :disabled="!slotFor(court, time) || (slotFor(court, time).status !== 'available' && !isSelected(court, time))"
-                                                            class="rounded-lg border px-1 py-1.5 text-[10px] font-medium transition-colors sm:px-2 sm:py-2 sm:text-xs"
+                                                            class="rounded-lg border px-1.5 py-2 text-sm font-bold transition-colors sm:px-2 sm:py-2.5 sm:text-base"
                                                             :class="cellClass(court, time)"
                                                             x-text="slotFor(court, time) ? cellLabel(time, court) : ''"
                                                         ></button>

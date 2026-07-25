@@ -120,10 +120,11 @@
         @php
             $__hours = \App\Models\OperatingHours::current();
             $__openLabel = 'Open '.\Illuminate\Support\Carbon::parse($__hours->open_time)->format('g:ia').' to '.\Illuminate\Support\Carbon::parse($__hours->close_time)->format('g:ia');
+            $__courtLabel = $activeCourtsCount.' Outdoor Court'.($activeCourtsCount === 1 ? '' : 's');
         @endphp
         <div class="mt-8 grid grid-cols-2 gap-6 rounded-3xl border border-ink-100 bg-white p-6 sm:grid-cols-3 sm:gap-8 sm:p-8 lg:grid-cols-6 dark:border-ink-800 dark:bg-ink-900">
             @foreach ([
-                ['icon' => 'ph-tennis-ball', 'label' => '1 Outdoor Court'],
+                ['icon' => 'ph-tennis-ball', 'label' => $__courtLabel],
                 ['icon' => 'ph-clock', 'label' => $__openLabel],
                 ['icon' => 'ph-drop', 'label' => 'Restrooms'],
                 ['icon' => 'ph-armchair', 'label' => 'Lounge Area'],
@@ -171,10 +172,22 @@
                 </h2>
             @endif
 
-            <div
-                id="home-map"
-                class="isolate relative mt-8 h-80 w-full overflow-hidden rounded-3xl border border-ink-100 sm:h-96 dark:border-ink-800"
-            ></div>
+            <div class="isolate relative mt-8">
+                <div
+                    id="home-map"
+                    class="h-80 w-full overflow-hidden rounded-3xl border border-ink-100 sm:h-96 dark:border-ink-800"
+                ></div>
+
+                <a
+                    href="https://www.google.com/maps/dir/?api=1&destination={{ $mapLat }},{{ $mapLng }}"
+                    target="_blank"
+                    rel="noopener"
+                    class="absolute top-3 right-3 z-400 inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-xs font-semibold text-ink-800 shadow-lg transition-colors hover:bg-accent-50 hover:text-accent-700 dark:bg-ink-900 dark:text-ink-200 dark:hover:bg-ink-800"
+                >
+                    <i class="ph ph-navigation-arrow text-sm"></i>
+                    Get Directions
+                </a>
+            </div>
         </section>
 
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
@@ -198,7 +211,10 @@
                     tap: true,
                 }).setView([lat, lng], 15);
                 L.tileLayer(style.url, style).addTo(map);
-                L.marker([lat, lng]).addTo(map)@if($mapLabel).bindPopup(@js($mapLabel))@endif;
+                var directionsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + lat + ',' + lng;
+                var popupHtml = @if($mapLabel)'<strong>' + @js($mapLabel) + '</strong><br>' + @endif
+                    '<a href="' + directionsUrl + '" target="_blank" rel="noopener">Get Directions</a>';
+                L.marker([lat, lng]).addTo(map).bindPopup(popupHtml);
 
                 // On touch devices, a one-finger swipe should scroll the
                 // page like normal instead of dragging the map - only
@@ -229,7 +245,7 @@
                 {{ $mapLabel }}
             </h2>
 
-            <div class="mt-8 overflow-hidden rounded-3xl border border-ink-100 dark:border-ink-800">
+            <div class="relative mt-8 overflow-hidden rounded-3xl border border-ink-100 dark:border-ink-800">
                 <iframe
                     src="https://www.google.com/maps?q={{ urlencode($mapLabel) }}&output=embed"
                     class="h-80 w-full sm:h-96"
@@ -238,6 +254,16 @@
                     referrerpolicy="no-referrer-when-downgrade"
                     title="Location map"
                 ></iframe>
+
+                <a
+                    href="https://www.google.com/maps/dir/?api=1&destination={{ urlencode($mapLabel) }}"
+                    target="_blank"
+                    rel="noopener"
+                    class="absolute top-3 right-3 inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-xs font-semibold text-ink-800 shadow-lg transition-colors hover:bg-accent-50 hover:text-accent-700 dark:bg-ink-900 dark:text-ink-200 dark:hover:bg-ink-800"
+                >
+                    <i class="ph ph-navigation-arrow text-sm"></i>
+                    Get Directions
+                </a>
             </div>
         </section>
     @endif
