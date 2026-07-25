@@ -146,9 +146,10 @@ class BookingController extends Controller
 
         $data = $request->validate([
             'court_id' => ['required', 'integer', 'exists:courts,id'],
-            // Higher than the customer self-service cap (6) - staff may
-            // legitimately book a full day for an event/tournament rental.
-            'court_slot_ids' => ['required', 'array', 'min:1', 'max:24'],
+            // No cap, unlike the customer self-service booking flow (24) -
+            // staff are trusted to book a full day, a multi-day event, or
+            // anything else legitimate without an arbitrary ceiling.
+            'court_slot_ids' => ['required', 'array', 'min:1'],
             'court_slot_ids.*' => ['integer', 'distinct', 'exists:court_slots,id'],
             'guest_name' => ['required', 'string', 'max:120'],
             'guest_phone' => ['nullable', 'string', 'regex:/^(09\d{9}|\+639\d{9})$/'],

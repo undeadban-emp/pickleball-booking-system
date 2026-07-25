@@ -35,27 +35,114 @@
 
             <div class="space-y-4">
                 <div class="rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
-                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div class="flex flex-col gap-1.5">
-                            <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Court</label>
-                            <select name="court_id" x-model="courtId" @change="onCourtChange()" required
-                                class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
-                                @foreach ($courts as $court)
-                                    <option value="{{ $court->id }}">{{ $court->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-
-                        <div class="flex flex-col gap-1.5">
-                            <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Date</label>
-                            <input type="date" x-model="dateStr" :min="minDate" @change="onDateChange()" required
-                                class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
-                        </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Court</label>
+                        <select name="court_id" x-model="courtId" @change="onCourtChange()" required
+                            class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
+                            @foreach ($courts as $court)
+                                <option value="{{ $court->id }}">{{ $court->name }}</option>
+                            @endforeach
+                        </select>
                     </div>
 
                     <template x-if="selectedCourt && selectedCourt.status === 'maintenance'">
                         <p class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-300">This court is currently under maintenance.</p>
                     </template>
+
+                    {{-- Date strip, same style as the home page booking widget --}}
+                    <div class="mt-4 flex flex-col gap-1.5">
+                        <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Date</label>
+                        <div class="flex items-center gap-1.5">
+                            <div class="relative shrink-0" @click.outside="showCalendar = false">
+                                <button
+                                    type="button"
+                                    @click="showCalendar ? (showCalendar = false) : openCalendar()"
+                                    class="flex h-11 w-11 items-center justify-center rounded-xl border transition-colors"
+                                    :class="showCalendar ? 'border-accent-500 bg-accent-50 text-accent-700 dark:border-accent-700 dark:bg-accent-950' : 'border-ink-200 bg-white text-ink-500 hover:border-accent-400 hover:text-accent-700 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-400'"
+                                    title="Pick a date"
+                                >
+                                    <i class="ph ph-calendar-blank text-lg"></i>
+                                </button>
+
+                                <div
+                                    x-show="showCalendar"
+                                    x-cloak
+                                    x-transition
+                                    class="absolute top-full left-0 z-20 mt-2 w-64 rounded-2xl border border-ink-100 bg-white p-3 shadow-xl dark:border-ink-800 dark:bg-ink-900"
+                                >
+                                    <div class="flex items-center justify-between">
+                                        <button type="button" @click="prevCalendarMonth()" class="flex h-7 w-7 items-center justify-center rounded-lg text-ink-500 hover:bg-ink-100 dark:text-ink-400 dark:hover:bg-ink-800">
+                                            <i class="ph ph-caret-left text-sm"></i>
+                                        </button>
+                                        <p class="text-xs font-semibold text-ink-800 dark:text-ink-200" x-text="calendarLabel()"></p>
+                                        <button type="button" @click="nextCalendarMonth()" class="flex h-7 w-7 items-center justify-center rounded-lg text-ink-500 hover:bg-ink-100 dark:text-ink-400 dark:hover:bg-ink-800">
+                                            <i class="ph ph-caret-right text-sm"></i>
+                                        </button>
+                                    </div>
+
+                                    <div class="mt-2 grid grid-cols-7 gap-1 text-center text-[10px] font-medium text-ink-400 dark:text-ink-500">
+                                        <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+                                    </div>
+
+                                    <template x-for="(week, wi) in calendarWeeks()" :key="wi">
+                                        <div class="grid grid-cols-7 gap-1">
+                                            <template x-for="(cell, ci) in week" :key="ci">
+                                                <button
+                                                    type="button"
+                                                    @click="pickCalendarDate(cell)"
+                                                    :disabled="!cell || !cell.isAvailable"
+                                                    class="relative flex h-8 w-8 items-center justify-center rounded-lg text-xs transition-colors"
+                                                    :class="!cell ? 'invisible' : (
+                                                        cell.isSelected ? 'bg-accent-500 font-semibold text-white' :
+                                                        !cell.isAvailable ? 'text-ink-300 cursor-not-allowed dark:text-ink-700' :
+                                                        cell.isToday ? 'border border-accent-400 text-accent-700 hover:bg-accent-50 dark:text-accent-400' :
+                                                        'text-ink-700 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800'
+                                                    )"
+                                                >
+                                                    <span x-text="cell ? cell.day : ''"></span>
+                                                    <span
+                                                        x-show="cell && cell.isAvailable && hasPickOn(cell.dateStr) && !cell.isSelected"
+                                                        x-cloak
+                                                        class="absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-accent-500"
+                                                    ></span>
+                                                </button>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <button type="button" @click="prevDateWindow()" :disabled="dateWindowStart === 0"
+                                class="flex h-11 w-9 shrink-0 items-center justify-center rounded-xl border border-ink-200 text-ink-500 hover:border-accent-400 hover:text-accent-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-ink-700 dark:text-ink-400">
+                                <i class="ph ph-caret-left text-base"></i>
+                            </button>
+
+                            <div class="grid flex-1 grid-cols-4 gap-1.5">
+                                <template x-for="d in visibleDates()" :key="d.dateStr">
+                                    <button
+                                        type="button"
+                                        @click="selectDate(d.dateStr)"
+                                        class="relative flex flex-col items-center rounded-xl border px-1 py-2.5 transition-colors"
+                                        :class="dateStr === d.dateStr
+                                            ? 'border-accent-500 bg-accent-500 text-white'
+                                            : (d.isToday
+                                                ? 'border-accent-300 bg-white text-ink-700 hover:border-accent-500 dark:border-accent-800 dark:bg-ink-950 dark:text-ink-300'
+                                                : 'border-ink-100 bg-white text-ink-700 hover:border-accent-400 dark:border-ink-800 dark:bg-ink-950 dark:text-ink-300')"
+                                    >
+                                        <span x-show="d.isToday" class="absolute -top-2 rounded-full bg-accent-500 px-1.5 py-0.5 text-[9px] font-bold text-white">Today</span>
+                                        <span class="text-[10px] font-medium uppercase" x-text="d.weekday"></span>
+                                        <span class="font-display text-base font-semibold" x-text="d.day"></span>
+                                        <span class="text-[10px]" x-text="d.month"></span>
+                                    </button>
+                                </template>
+                            </div>
+
+                            <button type="button" @click="nextDateWindow()" :disabled="dateWindowStart >= dateStrip.length - dateWindowSize"
+                                class="flex h-11 w-9 shrink-0 items-center justify-center rounded-xl border border-ink-200 text-ink-500 hover:border-accent-400 hover:text-accent-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-ink-700 dark:text-ink-400">
+                                <i class="ph ph-caret-right text-base"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">

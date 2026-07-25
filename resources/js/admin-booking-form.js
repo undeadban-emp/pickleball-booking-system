@@ -52,6 +52,107 @@ export default function adminBookingForm({ courts, slotsUrlBase, periodBoundarie
         courtId: initialCourtId ?? courts[0]?.id ?? null,
         dateStr: todayStr,
         minDate: todayStr,
+
+        // Date strip (same style as the home page booking widget): a
+        // scrollable window over the next 30 days, browsed with prev/next
+        // instead of a plain <input type="date">. Optional - only used by
+        // pages whose markup includes the strip (currently just the "New
+        // Booking" walk-in form); other adminBookingForm() consumers keep
+        // their plain date input and simply never touch these.
+        dateStrip: (() => {
+            const days = [];
+            const base = new Date();
+            for (let i = 0; i < 30; i++) {
+                const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
+                days.push({
+                    dateStr: toDateStr(d),
+                    weekday: d.toLocaleDateString('en-US', { weekday: 'short' }),
+                    day: d.getDate(),
+                    month: d.toLocaleDateString('en-US', { month: 'short' }),
+                    isToday: i === 0,
+                });
+            }
+            return days;
+        })(),
+        dateWindowSize: 4,
+        dateWindowStart: 0,
+        visibleDates() {
+            return this.dateStrip.slice(this.dateWindowStart, this.dateWindowStart + this.dateWindowSize);
+        },
+        prevDateWindow() {
+            this.dateWindowStart = Math.max(0, this.dateWindowStart - this.dateWindowSize);
+        },
+        nextDateWindow() {
+            this.dateWindowStart = Math.min(this.dateStrip.length - this.dateWindowSize, this.dateWindowStart + this.dateWindowSize);
+        },
+        selectDate(dateStr) {
+            this.dateStr = dateStr;
+            this.onDateChange();
+        },
+
+        // Calendar popup (same as the home page booking widget) - jump to
+        // any date within the bookable window instead of stepping through
+        // the strip 4 days at a time.
+        showCalendar: false,
+        calendarCursor: new Date(),
+        calendarLabel() {
+            return this.calendarCursor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        },
+        calendarWeeks() {
+            const year = this.calendarCursor.getFullYear();
+            const month = this.calendarCursor.getMonth();
+            const firstDay = new Date(year, month, 1);
+            const startOffset = firstDay.getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const validSet = new Set(this.dateStrip.map((d) => d.dateStr));
+
+            const cells = [];
+            for (let i = 0; i < startOffset; i++) cells.push(null);
+            for (let day = 1; day <= daysInMonth; day++) {
+                const d = new Date(year, month, day);
+                const ds = toDateStr(d);
+                cells.push({
+                    day,
+                    dateStr: ds,
+                    isToday: ds === todayStr,
+                    isSelected: ds === this.dateStr,
+                    isAvailable: validSet.has(ds),
+                });
+            }
+            while (cells.length % 7 !== 0) cells.push(null);
+
+            const weeks = [];
+            for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+            return weeks;
+        },
+        openCalendar() {
+            const [y, m] = this.dateStr.split('-').map(Number);
+            this.calendarCursor = new Date(y, m - 1, 1);
+            this.showCalendar = true;
+        },
+        prevCalendarMonth() {
+            this.calendarCursor = new Date(this.calendarCursor.getFullYear(), this.calendarCursor.getMonth() - 1, 1);
+        },
+        nextCalendarMonth() {
+            this.calendarCursor = new Date(this.calendarCursor.getFullYear(), this.calendarCursor.getMonth() + 1, 1);
+        },
+        pickCalendarDate(cell) {
+            if (!cell || !cell.isAvailable) return;
+
+            const index = this.dateStrip.findIndex((d) => d.dateStr === cell.dateStr);
+            if (index === -1) return;
+
+            this.dateWindowStart = Math.min(Math.floor(index / this.dateWindowSize) * this.dateWindowSize, this.dateStrip.length - this.dateWindowSize);
+            this.selectDate(cell.dateStr);
+            this.showCalendar = false;
+        },
+        // Whether any currently-picked slot (any court, any of the picked
+        // dates) falls on this date - drives the small dot shown on
+        // strip/calendar cells so a date with existing picks stands out.
+        hasPickOn(dateStr) {
+            return Object.values(this.pickedSlots).some((s) => s.slot_date === dateStr);
+        },
+
         slots: [],
         // Picks persist across date switches, keyed by slot id, so staff
         // can pick sessions on one date, change the date to add another
