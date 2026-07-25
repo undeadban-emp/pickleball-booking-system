@@ -30,10 +30,27 @@ class ClientReportController extends Controller
 
     protected function resolveRange(Request $request): array
     {
-        $from = $request->filled('from') ? Carbon::parse($request->string('from')) : today()->subDays(29);
-        $to = $request->filled('to') ? Carbon::parse($request->string('to')) : today();
+        $from = $this->parseDate($request->string('from')) ?? today()->subDays(29);
+        $to = $this->parseDate($request->string('to')) ?? today();
 
         return $from->lessThanOrEqualTo($to) ? [$from, $to] : [$to, $from];
+    }
+
+    /**
+     * Malformed "from"/"to" query params used to crash this endpoint with a
+     * raw Carbon parse exception - fall back to the default range instead.
+     */
+    protected function parseDate($value): ?Carbon
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     protected function salesInRange(Carbon $from, Carbon $to)

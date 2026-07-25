@@ -126,7 +126,7 @@
 
                         <div class="flex flex-col gap-1.5">
                             <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Phone</label>
-                            <input name="guest_phone" type="tel" required pattern="^(09\d{9}|\+639\d{9})$" title="Enter a valid PH mobile number, e.g. 09171234567 or +639171234567" placeholder="09XX-XXX-XXXX" value="{{ old('guest_phone', $prefill['guest_phone'] ?? '') }}"
+                            <input name="guest_phone" type="tel" pattern="^(09\d{9}|\+639\d{9})$" title="Enter a valid PH mobile number, e.g. 09171234567 or +639171234567" placeholder="09XX-XXX-XXXX" value="{{ old('guest_phone', $prefill['guest_phone'] ?? '') }}"
                                 class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
                             @error('guest_phone')
                                 <p class="text-xs text-rose-600 dark:text-rose-400">{{ $message }}</p>
@@ -135,7 +135,7 @@
 
                         <div class="flex flex-col gap-1.5">
                             <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Email</label>
-                            <input name="guest_email" type="email" required placeholder="you@email.com" value="{{ old('guest_email', $prefill['guest_email'] ?? '') }}"
+                            <input name="guest_email" type="email" placeholder="you@email.com" value="{{ old('guest_email', $prefill['guest_email'] ?? '') }}"
                                 class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
                             @error('guest_email')
                                 <p class="text-xs text-rose-600 dark:text-rose-400">{{ $message }}</p>

@@ -172,7 +172,8 @@
                             <th class="py-1.5 pr-3">Staff</th>
                             <th class="py-1.5 pr-3">Approvals</th>
                             <th class="py-1.5 pr-3">Rejections</th>
-                            <th class="py-1.5">Check-ins</th>
+                            <th class="py-1.5 pr-3">Check-ins</th>
+                            <th class="py-1.5">Holds</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-ink-100 dark:divide-ink-800">
@@ -181,10 +182,11 @@
                                 <td class="py-1.5 pr-3 text-ink-800 dark:text-ink-200">{{ $name }}</td>
                                 <td class="py-1.5 pr-3 text-ink-600 dark:text-ink-400">{{ $data['approvals'] }}</td>
                                 <td class="py-1.5 pr-3 text-ink-600 dark:text-ink-400">{{ $data['rejections'] }}</td>
-                                <td class="py-1.5 text-ink-600 dark:text-ink-400">{{ $data['checkins'] }}</td>
+                                <td class="py-1.5 pr-3 text-ink-600 dark:text-ink-400">{{ $data['checkins'] }}</td>
+                                <td class="py-1.5 text-ink-600 dark:text-ink-400">{{ $data['holds'] }}</td>
                             </tr>
                         @empty
-                            <tr><td colspan="4" class="py-1.5 text-ink-500 dark:text-ink-400">No staff activity in this range.</td></tr>
+                            <tr><td colspan="5" class="py-1.5 text-ink-500 dark:text-ink-400">No staff activity in this range.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

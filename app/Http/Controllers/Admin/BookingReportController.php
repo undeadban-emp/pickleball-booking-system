@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Admin\Concerns\ExportsCsv;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
+use App\Models\BookingRescheduleLog;
 use App\Models\Court;
 use App\Models\CourtSlot;
 use App\Models\GameMatch;
@@ -126,10 +127,28 @@ class BookingReportController extends Controller
 
     protected function resolveRange(Request $request): array
     {
-        $from = $request->filled('from') ? Carbon::parse($request->string('from')) : today()->subDays(29);
-        $to = $request->filled('to') ? Carbon::parse($request->string('to')) : today();
+        $from = $this->parseDate($request->string('from')) ?? today()->subDays(29);
+        $to = $this->parseDate($request->string('to')) ?? today();
 
         return $from->lessThanOrEqualTo($to) ? [$from, $to] : [$to, $from];
+    }
+
+    /**
+     * Malformed "from"/"to" query params (bad manual URL edits, stray
+     * copy-paste, etc.) used to crash this whole page with a raw Carbon
+     * parse exception - fall back to the default range instead.
+     */
+    protected function parseDate($value): ?Carbon
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     protected function resolveCourtId(Request $request): ?int
@@ -197,16 +216,27 @@ class BookingReportController extends Controller
 
     /**
      * How many bookings this range were rescheduled (rain/reschedule), and
-     * the revenue that carried forward with them - the "new" booking is what
-     * actually gets the money attributed to it (see Booking::scopeSales()),
-     * so summing its total_price is the honest measure of what moved, not
-     * what was lost.
+     * the revenue that carried forward with them. Two mechanisms feed this:
+     * the legacy cancel-and-recreate flow (a new booking row, counted by its
+     * own created_at) and the current in-place reschedule flow (same row,
+     * logged via BookingRescheduleLog instead, since the booking's own
+     * created_at never moves) - see Booking::rescheduledFrom()/rescheduleLogs().
+     * Deduplicated so a booking rescheduled more than once in range is only
+     * counted once, at its current total_price.
      */
     protected function rebookImpact(Carbon $from, Carbon $to): array
     {
-        $rebooked = Booking::whereNotNull('rescheduled_from_id')
-            ->whereBetween('created_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
-            ->get(['total_price']);
+        $range = [$from->copy()->startOfDay(), $to->copy()->endOfDay()];
+
+        $bookingIds = Booking::whereNotNull('rescheduled_from_id')
+            ->whereBetween('created_at', $range)
+            ->pluck('id')
+            ->merge(
+                BookingRescheduleLog::whereBetween('created_at', $range)->pluck('booking_id')
+            )
+            ->unique();
+
+        $rebooked = Booking::whereIn('id', $bookingIds)->get(['total_price']);
 
         return ['count' => $rebooked->count(), 'total' => $rebooked->sum('total_price')];
     }
@@ -230,7 +260,9 @@ class BookingReportController extends Controller
 
     /**
      * Approvals/rejections come from the booking_status_logs trail; check-ins
-     * are tracked directly on the booking (checked_in_by/checked_in_at).
+     * are tracked directly on the booking (checked_in_by/checked_in_at);
+     * holds come from booking_holds.held_by - the newest staff action, added
+     * alongside the "put on hold" feature.
      */
     protected function staffActivity(Carbon $from, Carbon $to)
     {
@@ -251,6 +283,13 @@ class BookingReportController extends Controller
             ->groupBy('users.name')
             ->get();
 
+        $holds = DB::table('booking_holds')
+            ->join('users', 'users.id', '=', 'booking_holds.held_by')
+            ->whereBetween('booking_holds.created_at', $range)
+            ->selectRaw('users.name, COUNT(*) as count')
+            ->groupBy('users.name')
+            ->get();
+
         $byStaff = [];
 
         foreach ($logs as $log) {
@@ -265,8 +304,15 @@ class BookingReportController extends Controller
             $byStaff[$c->name]['checkins'] = $c->count;
         }
 
+        foreach ($holds as $h) {
+            $byStaff[$h->name]['approvals'] ??= 0;
+            $byStaff[$h->name]['rejections'] ??= 0;
+            $byStaff[$h->name]['holds'] = $h->count;
+        }
+
         foreach ($byStaff as $name => $data) {
             $byStaff[$name]['checkins'] ??= 0;
+            $byStaff[$name]['holds'] ??= 0;
         }
 
         return $byStaff;

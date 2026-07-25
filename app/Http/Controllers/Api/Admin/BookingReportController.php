@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
+use App\Models\BookingRescheduleLog;
 use App\Models\Court;
 use App\Models\GameMatch;
 use Illuminate\Http\Request;
@@ -50,10 +51,27 @@ class BookingReportController extends Controller
 
     protected function resolveRange(Request $request): array
     {
-        $from = $request->filled('from') ? Carbon::parse($request->string('from')) : today()->subDays(29);
-        $to = $request->filled('to') ? Carbon::parse($request->string('to')) : today();
+        $from = $this->parseDate($request->string('from')) ?? today()->subDays(29);
+        $to = $this->parseDate($request->string('to')) ?? today();
 
         return $from->lessThanOrEqualTo($to) ? [$from, $to] : [$to, $from];
+    }
+
+    /**
+     * Malformed "from"/"to" query params used to crash this endpoint with a
+     * raw Carbon parse exception - fall back to the default range instead.
+     */
+    protected function parseDate($value): ?Carbon
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     protected function statusBreakdown(Carbon $from, Carbon $to)
@@ -105,11 +123,23 @@ class BookingReportController extends Controller
             ->get();
     }
 
+    /**
+     * See Admin\BookingReportController::rebookImpact() (web) for why this
+     * unions the legacy rescheduled_from_id chain with BookingRescheduleLog.
+     */
     protected function rebookImpact(Carbon $from, Carbon $to): array
     {
-        $rebooked = Booking::whereNotNull('rescheduled_from_id')
-            ->whereBetween('created_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
-            ->get(['total_price']);
+        $range = [$from->copy()->startOfDay(), $to->copy()->endOfDay()];
+
+        $bookingIds = Booking::whereNotNull('rescheduled_from_id')
+            ->whereBetween('created_at', $range)
+            ->pluck('id')
+            ->merge(
+                BookingRescheduleLog::whereBetween('created_at', $range)->pluck('booking_id')
+            )
+            ->unique();
+
+        $rebooked = Booking::whereIn('id', $bookingIds)->get(['total_price']);
 
         return ['count' => $rebooked->count(), 'total' => $rebooked->sum('total_price')];
     }
@@ -140,6 +170,13 @@ class BookingReportController extends Controller
             ->groupBy('users.name')
             ->get();
 
+        $holds = DB::table('booking_holds')
+            ->join('users', 'users.id', '=', 'booking_holds.held_by')
+            ->whereBetween('booking_holds.created_at', $range)
+            ->selectRaw('users.name, COUNT(*) as count')
+            ->groupBy('users.name')
+            ->get();
+
         $byStaff = [];
 
         foreach ($logs as $log) {
@@ -154,8 +191,15 @@ class BookingReportController extends Controller
             $byStaff[$c->name]['checkins'] = $c->count;
         }
 
+        foreach ($holds as $h) {
+            $byStaff[$h->name]['approvals'] ??= 0;
+            $byStaff[$h->name]['rejections'] ??= 0;
+            $byStaff[$h->name]['holds'] = $h->count;
+        }
+
         foreach ($byStaff as $name => $data) {
             $byStaff[$name]['checkins'] ??= 0;
+            $byStaff[$name]['holds'] ??= 0;
         }
 
         return $byStaff;

@@ -21,12 +21,12 @@
     <form method="GET" class="mt-5 flex flex-wrap items-end gap-3 rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900">
         <div class="flex flex-col gap-1.5">
             <label class="text-xs font-medium text-ink-500 dark:text-ink-400">From</label>
-            <input type="date" name="from" value="{{ $from->toDateString() }}" max="{{ today()->toDateString() }}"
+            <input type="date" name="from" value="{{ $from->toDateString() }}"
                 class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
         </div>
         <div class="flex flex-col gap-1.5">
             <label class="text-xs font-medium text-ink-500 dark:text-ink-400">To</label>
-            <input type="date" name="to" value="{{ $to->toDateString() }}" max="{{ today()->toDateString() }}"
+            <input type="date" name="to" value="{{ $to->toDateString() }}"
                 class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100">
         </div>
         <button type="submit" class="rounded-lg bg-ink-950 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-ink-800 dark:bg-accent-500 dark:text-ink-950 dark:hover:bg-accent-400">
