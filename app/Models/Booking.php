@@ -24,6 +24,7 @@ class Booking extends Model
         'guest_name',
         'guest_phone',
         'guest_email',
+        'created_by_admin',
         'court_id',
         'rescheduled_from_id',
         'split_from_booking_id',
@@ -50,6 +51,7 @@ class Booking extends Model
     {
         return [
             'total_price' => 'decimal:2',
+            'created_by_admin' => 'boolean',
             'gcash_submitted_at' => 'datetime',
             'payment_reviewed_at' => 'datetime',
             'checkin_token_expires_at' => 'datetime',
@@ -219,6 +221,22 @@ class Booking extends Model
     public function isGuestBooking(): bool
     {
         return $this->user_id === null;
+    }
+
+    /**
+     * Admin can only hand-edit (rename, add/remove hours) a booking staff
+     * walked in themselves at the front desk - it's their own data entry to
+     * correct. Never a booking a guest submitted through the public flow
+     * (that's the customer's own submission/commitment, already tied to
+     * whatever payment reference they sent) and never a registered user's
+     * own account (their profile is theirs to manage, not front desk's).
+     * Also off the table once the booking is no longer active.
+     */
+    public function isAdminEditable(): bool
+    {
+        return $this->isGuestBooking()
+            && $this->created_by_admin
+            && in_array($this->status, ['pending_payment', 'confirmed'], true);
     }
 
     /**

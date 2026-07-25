@@ -20,6 +20,11 @@
     // etc.) not tied to an active Open Play room can be put on hold.
     $isHoldable = fn ($booking) => $booking->status === 'confirmed' && ! $booking->openPlayRoomCourt()->exists();
 
+    // Whether an order has at least one session staff can edit (see
+    // Booking::isAdminEditable()) - gates the order-level "Edit" entry
+    // point the same way $isReschedulable/$isHoldable gate theirs.
+    $isOrderEditable = fn ($order) => $order->bookings->contains(fn ($b) => $b->isAdminEditable());
+
     // Reschedules now update the same booking in place instead of creating
     // a replacement row - this is the most recent move, if any, so it can
     // be shown as a small note under the session's date/time.
@@ -302,6 +307,15 @@
                                                 <i class="ph ph-pause-circle text-base"></i>
                                             </a>
                                         @endif
+                                        @if ($isOrderEditable($booking->bookingOrder))
+                                            <a
+                                                href="{{ route('admin.bookings.edit-order', $booking->bookingOrder) }}"
+                                                class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-accent-400 hover:text-accent-700 dark:border-ink-700 dark:text-ink-400"
+                                                title="Edit this booking's dates"
+                                            >
+                                                <i class="ph ph-pencil-simple text-base"></i>
+                                            </a>
+                                        @endif
                                     @else
                                         @if ($isReschedulable($booking))
                                             <a
@@ -319,6 +333,15 @@
                                                 title="Put this booking on hold"
                                             >
                                                 <i class="ph ph-pause-circle text-base"></i>
+                                            </a>
+                                        @endif
+                                        @if ($booking->isAdminEditable())
+                                            <a
+                                                href="{{ route('admin.bookings.edit', $booking) }}"
+                                                class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-accent-400 hover:text-accent-700 dark:border-ink-700 dark:text-ink-400"
+                                                title="Edit guest details or hours"
+                                            >
+                                                <i class="ph ph-pencil-simple text-base"></i>
                                             </a>
                                         @endif
                                     @endif
@@ -427,6 +450,11 @@
                                             @if ($canManage && $isHoldable($session))
                                                 <a href="{{ route('admin.bookings.hold.edit', $session) }}" class="text-[10px] font-semibold text-amber-700 hover:text-amber-800 dark:text-amber-400">
                                                     Hold
+                                                </a>
+                                            @endif
+                                            @if ($canManage && $session->isAdminEditable())
+                                                <a href="{{ route('admin.bookings.edit', $session) }}" class="text-[10px] font-semibold text-accent-700 hover:text-accent-800 dark:text-accent-400">
+                                                    Edit
                                                 </a>
                                             @endif
                                         </li>
@@ -584,6 +612,11 @@
                                         @if ((auth()->user()->isAdmin() || auth()->user()->isStaff()) && $isHoldable($session))
                                             <a href="{{ route('admin.bookings.hold.edit', $session) }}" class="mt-2 ml-1 inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs font-semibold text-amber-700 hover:border-amber-400 hover:bg-amber-50 dark:border-amber-800 dark:bg-transparent dark:text-amber-400 dark:hover:bg-amber-950">
                                                 <i class="ph ph-pause-circle"></i> Hold
+                                            </a>
+                                        @endif
+                                        @if ((auth()->user()->isAdmin() || auth()->user()->isStaff()) && $session->isAdminEditable())
+                                            <a href="{{ route('admin.bookings.edit', $session) }}" class="mt-2 ml-1 inline-flex items-center gap-1 rounded-lg border border-accent-300 bg-white px-2 py-1 text-xs font-semibold text-accent-700 hover:border-accent-400 hover:bg-accent-50 dark:border-accent-800 dark:bg-transparent dark:text-accent-400 dark:hover:bg-accent-950">
+                                                <i class="ph ph-pencil-simple"></i> Edit
                                             </a>
                                         @endif
                                     </div>
@@ -838,6 +871,23 @@
                                 >
                                     <i class="ph ph-pause-circle text-base"></i>
                                     Hold a session
+                                </a>
+                            @endif
+                            @if ((auth()->user()->isAdmin() || auth()->user()->isStaff()) && ! $booking->bookingOrder && $booking->isAdminEditable())
+                                <a
+                                    href="{{ route('admin.bookings.edit', $booking) }}"
+                                    class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-ink-200 px-4 py-2 text-sm font-semibold text-ink-700 hover:border-accent-400 hover:text-accent-700 dark:border-ink-700 dark:text-ink-300 dark:hover:text-accent-400"
+                                >
+                                    <i class="ph ph-pencil-simple text-base"></i>
+                                    Edit
+                                </a>
+                            @elseif ((auth()->user()->isAdmin() || auth()->user()->isStaff()) && $booking->bookingOrder && $isOrderEditable($booking->bookingOrder))
+                                <a
+                                    href="{{ route('admin.bookings.edit-order', $booking->bookingOrder) }}"
+                                    class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-ink-200 px-4 py-2 text-sm font-semibold text-ink-700 hover:border-accent-400 hover:text-accent-700 dark:border-ink-700 dark:text-ink-300 dark:hover:text-accent-400"
+                                >
+                                    <i class="ph ph-pencil-simple text-base"></i>
+                                    Edit dates
                                 </a>
                             @endif
                         </div>

@@ -164,6 +164,13 @@ Route::middleware(['auth', 'role:admin,staff'])->prefix('admin')->name('admin.')
     Route::get('/bookings/{booking}/hold', [AdminBookingController::class, 'holdForm'])->name('bookings.hold.edit');
     Route::post('/bookings/{booking}/hold', [AdminBookingController::class, 'hold'])->name('bookings.hold.store');
     Route::post('/bookings/{booking}/cancel-hold', [AdminBookingController::class, 'cancelHold'])->name('bookings.hold.cancel');
+    Route::get('/bookings/{booking}/edit', [AdminBookingController::class, 'editDetails'])->name('bookings.edit');
+    Route::post('/bookings/{booking}/edit/details', [AdminBookingController::class, 'updateGuestDetails'])->name('bookings.edit.details');
+    Route::post('/bookings/{booking}/edit/remove-time', [AdminBookingController::class, 'removeTime'])->name('bookings.edit.remove-time');
+    Route::post('/bookings/{booking}/edit/add-sessions', [AdminBookingController::class, 'addSessions'])->name('bookings.edit.add-sessions');
+    Route::get('/bookings/orders/{order}/edit', [AdminBookingController::class, 'editOrder'])->name('bookings.edit-order');
+    Route::post('/bookings/orders/{order}/edit/details', [AdminBookingController::class, 'updateOrderGuestDetails'])->name('bookings.edit-order.details');
+    Route::post('/bookings/{booking}/cancel-session', [AdminBookingController::class, 'cancelSession'])->name('bookings.cancel-session');
 
     // Live match scoring on a checked-in booking: admin and staff both run these.
     Route::get('/bookings/{booking}/matches/create', [MatchController::class, 'create'])->name('matches.create');

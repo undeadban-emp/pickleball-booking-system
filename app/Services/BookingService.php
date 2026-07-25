@@ -91,6 +91,7 @@ class BookingService
     public function createConfirmedBooking(?User $customer, Court $court, array $courtSlotIds, ?array $guest, User $admin, ?Booking $rescheduledFrom = null): Booking
     {
         $booking = $this->createBooking($customer, $court, $courtSlotIds, $guest);
+        $booking->update(['created_by_admin' => true]);
 
         if ($rescheduledFrom) {
             $booking->update(['rescheduled_from_id' => $rescheduledFrom->id]);
@@ -662,6 +663,160 @@ class BookingService
     }
 
     /**
+     * Front-desk correction for a staff-entered walk-in booking's contact details
+     * (typo'd name/phone/email) - no payment or slot changes, just the
+     * contact record. Restricted to bookings staff walked in themselves;
+     * see Booking::isAdminEditable().
+     */
+    public function renameGuest(Booking $booking, string $name, ?string $phone, ?string $email): Booking
+    {
+        $this->assertAdminEditable($booking);
+
+        $booking->update([
+            'guest_name' => $name,
+            'guest_phone' => $phone,
+            'guest_email' => $email,
+        ]);
+
+        return $booking->fresh();
+    }
+
+    /**
+     * Frees some of a staff-entered walk-in booking's hours back to available,
+     * shrinking the booking - at least one hour must remain (use cancel()
+     * to drop all of them).
+     *
+     * @param  array<int>  $courtSlotIds  subset of $booking's own slot ids
+     */
+    public function removeSlotsFromBooking(Booking $booking, array $courtSlotIds): Booking
+    {
+        $this->assertAdminEditable($booking);
+
+        return DB::transaction(function () use ($booking, $courtSlotIds) {
+            $allSlots = $booking->slots()->orderBy('start_time')->lockForUpdate()->get();
+
+            $toRemove = $allSlots->whereIn('id', $courtSlotIds)->values();
+
+            if ($toRemove->count() !== count($courtSlotIds)) {
+                throw new SlotUnavailableException('One or more selected hours are not part of this booking.');
+            }
+
+            if ($toRemove->isEmpty()) {
+                throw new \InvalidArgumentException('Select at least one hour to remove.');
+            }
+
+            if ($toRemove->count() === $allSlots->count()) {
+                throw new \InvalidArgumentException('At least one hour must remain — cancel the booking instead to remove all of them.');
+            }
+
+            CourtSlot::whereIn('id', $toRemove->pluck('id'))->update(['status' => 'available']);
+            $booking->slots()->detach($toRemove->pluck('id')->all());
+
+            $remaining = $allSlots->whereNotIn('id', $toRemove->pluck('id'));
+            $booking->update(['total_price' => $remaining->sum('price')]);
+
+            if ($booking->bookingOrder) {
+                $booking->bookingOrder->update(['total_price' => $booking->bookingOrder->bookings()->sum('total_price')]);
+            }
+
+            return $booking->fresh(['slots', 'court']);
+        });
+    }
+
+    /**
+     * Adds several arbitrary (date, hour-block) sessions onto a staff-entered
+     * walk-in booking in one go - e.g. Aug 18 6-8pm, Aug 21 4-11pm, Aug 23
+     * 4-8pm, each its own sibling Booking grouped under the same
+     * BookingOrder as $booking so it reads as one ongoing reservation. Each
+     * $sessions[i]['court_slot_ids'] is one contiguous block for one day -
+     * unlike a daily repeat, every row can have its own time. All-or-nothing:
+     * if any row's slots aren't free (or the same slot id was picked in more
+     * than one row), the whole call throws and nothing is created - the
+     * admin picked every row by hand from real availability, so a failure
+     * here means something changed underneath them and they should see
+     * exactly what, not have some rows silently dropped for them.
+     *
+     * @param  array<int, array{court_slot_ids: array<int>}>  $sessions
+     * @return \Illuminate\Support\Collection<int, Booking>
+     */
+    public function addMultipleSessions(Booking $booking, array $sessions, User $admin): \Illuminate\Support\Collection
+    {
+        $this->assertAdminEditable($booking);
+
+        if (empty($sessions)) {
+            throw new \InvalidArgumentException('Add at least one date before submitting.');
+        }
+
+        $allIds = collect($sessions)->flatMap(fn (array $s) => $s['court_slot_ids'] ?? []);
+        if ($allIds->count() !== $allIds->unique()->count()) {
+            throw new \InvalidArgumentException('The same hour was picked in more than one date - remove the duplicate and try again.');
+        }
+
+        return DB::transaction(function () use ($booking, $sessions, $admin) {
+            $order = $this->ensureOrder($booking);
+            $created = collect();
+
+            foreach ($sessions as $session) {
+                $courtSlotIds = $session['court_slot_ids'];
+
+                $slots = CourtSlot::query()
+                    ->whereIn('id', $courtSlotIds)
+                    ->where('court_id', $booking->court_id)
+                    ->lockForUpdate()
+                    ->orderBy('start_time')
+                    ->get();
+
+                if ($slots->count() !== count($courtSlotIds)) {
+                    throw new SlotUnavailableException('One or more selected hours could not be found on this court.');
+                }
+
+                $dateLabel = $slots->first()->slot_date->format('M j, Y');
+
+                if ($slots->contains(fn (CourtSlot $s) => ! $s->isAvailable())) {
+                    throw new SlotUnavailableException("The hours you picked for {$dateLabel} are no longer available - please reselect them.");
+                }
+
+                $this->assertContiguous($slots, "The hours you picked for {$dateLabel} must be back to back with no gaps.");
+
+                $sibling = Booking::create([
+                    'booking_code' => $this->generateBookingCode(),
+                    'guest_name' => $booking->guest_name,
+                    'guest_phone' => $booking->guest_phone,
+                    'guest_email' => $booking->guest_email,
+                    'created_by_admin' => true,
+                    'court_id' => $booking->court_id,
+                    'booking_order_id' => $order->id,
+                    'status' => 'confirmed',
+                    'total_price' => $slots->sum('price'),
+                    'receipt_token' => Str::random(40),
+                    'payment_reviewed_by' => $admin->id,
+                    'payment_reviewed_at' => now(),
+                    'checkin_token' => Str::random(40),
+                    'checkin_token_expires_at' => $slots->last()->slot_date->clone()->setTimeFromTimeString($slots->last()->end_time),
+                ]);
+
+                $sibling->slots()->attach($slots->pluck('id'));
+                CourtSlot::whereIn('id', $slots->pluck('id'))->update(['status' => 'booked']);
+
+                $this->logStatus($sibling, null, 'confirmed', $admin, "Added via multi-date entry on {$booking->booking_code}");
+
+                $created->push($sibling->fresh(['slots', 'court']));
+            }
+
+            $order->update(['total_price' => $order->bookings()->sum('total_price')]);
+
+            return $created;
+        });
+    }
+
+    protected function assertAdminEditable(Booking $booking): void
+    {
+        if (! $booking->isAdminEditable()) {
+            throw new InvalidBookingTransitionException($booking->status, 'edited (only bookings staff walked in themselves can be edited)');
+        }
+    }
+
+    /**
      * Reuses $booking's existing BookingOrder if it has one, otherwise wraps
      * it in a fresh one - used whenever a booking is about to produce
      * sibling rows (split-reschedule, hold) that need to share one purchase.
@@ -803,9 +958,9 @@ class BookingService
     /**
      * @param  \Illuminate\Support\Collection<int, CourtSlot>  $slots
      */
-    protected function assertContiguous($slots): void
+    protected function assertContiguous($slots, ?string $message = null): void
     {
-        $slots->values()->each(function (CourtSlot $slot, int $index) use ($slots) {
+        $slots->values()->each(function (CourtSlot $slot, int $index) use ($slots, $message) {
             if ($index === 0) {
                 return;
             }
@@ -816,7 +971,7 @@ class BookingService
                 $previous->slot_date->toDateString() !== $slot->slot_date->toDateString()
                 || $previous->end_time !== $slot->start_time
             ) {
-                throw new NonContiguousSlotsException;
+                throw new NonContiguousSlotsException($message ?? 'Selected slots must be back to back with no gaps.');
             }
         });
     }

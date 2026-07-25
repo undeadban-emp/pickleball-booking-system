@@ -12,6 +12,16 @@
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 
+/* Tailwind's Preflight resets <button> to cursor:default (matching native
+   browser behavior) - restores the expected pointer/hand cursor on hover for
+   every non-disabled button/role="button" across the app. */
+@layer base {
+    button:not(:disabled),
+    [role='button']:not(:disabled) {
+        cursor: pointer;
+    }
+}
+
 /* Light-only for now: dark: utilities only activate under an explicit .dark
    class (never applied), instead of following the OS/browser color scheme. */
 @custom-variant dark (&:where(.dark, .dark *));

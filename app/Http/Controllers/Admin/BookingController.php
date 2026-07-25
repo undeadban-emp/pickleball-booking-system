@@ -186,6 +186,151 @@ class BookingController extends Controller
     }
 
     /**
+     * Edit page for a booking a guest entered themselves - rename their
+     * contact details, or add/remove hours. See Booking::isAdminEditable().
+     */
+    public function editDetails(Booking $booking)
+    {
+        $this->authorizeCanManageBookings();
+
+        abort_unless($booking->isAdminEditable(), 422, 'This booking cannot be edited.');
+
+        $booking->load(['court', 'slots' => fn ($q) => $q->orderBy('start_time')]);
+
+        return view('admin.bookings.edit', [
+            'booking' => $booking,
+        ]);
+    }
+
+    public function updateGuestDetails(Request $request, Booking $booking)
+    {
+        $this->authorizeCanManageBookings();
+
+        $data = $request->validate([
+            'guest_name' => ['required', 'string', 'max:120'],
+            'guest_phone' => ['nullable', 'string', 'regex:/^(09\d{9}|\+639\d{9})$/'],
+            'guest_email' => ['nullable', 'email', 'max:150'],
+        ]);
+
+        try {
+            $this->bookings->renameGuest($booking, $data['guest_name'], $data['guest_phone'] ?? null, $data['guest_email'] ?? null);
+        } catch (InvalidBookingTransitionException $e) {
+            return back()->withErrors(['guest_name' => $e->getMessage()]);
+        }
+
+        return redirect()->route('admin.bookings.edit', $booking)->with('status', "Booking {$booking->booking_code} details updated.");
+    }
+
+    /**
+     * Combined edit page for an order with multiple dates/times (e.g. a
+     * client booked several sessions at once via "Add multiple dates &
+     * times") - one screen listing every session in the order, instead of
+     * having to open each date's own edit page separately. Renaming here
+     * updates every editable session in the order at once; adding more
+     * dates and per-date hour edits still reuse the existing single-booking
+     * routes (addSessions/edit/cancel), just pointed at whichever session in
+     * the order is editable.
+     */
+    public function editOrder(BookingOrder $order)
+    {
+        $this->authorizeCanManageBookings();
+
+        $order->load(['bookings' => fn ($q) => $q->orderBy('id'), 'bookings.slots' => fn ($q) => $q->orderBy('start_time'), 'bookings.court']);
+
+        abort_unless($order->bookings->contains(fn (Booking $b) => $b->isAdminEditable()), 422, 'No editable sessions in this booking.');
+
+        return view('admin.bookings.edit-order', [
+            'order' => $order,
+            'anchor' => $order->bookings->first(fn (Booking $b) => $b->isAdminEditable()),
+        ]);
+    }
+
+    /**
+     * Renames the guest across every editable session in the order at once
+     * - sessions the admin didn't walk in themselves (or that are no longer
+     * active) are left untouched rather than erroring the whole request.
+     */
+    public function updateOrderGuestDetails(Request $request, BookingOrder $order)
+    {
+        $this->authorizeCanManageBookings();
+
+        $data = $request->validate([
+            'guest_name' => ['required', 'string', 'max:120'],
+            'guest_phone' => ['nullable', 'string', 'regex:/^(09\d{9}|\+639\d{9})$/'],
+            'guest_email' => ['nullable', 'email', 'max:150'],
+        ]);
+
+        $order->load('bookings');
+        $updated = 0;
+
+        foreach ($order->bookings as $session) {
+            if ($session->isAdminEditable()) {
+                $this->bookings->renameGuest($session, $data['guest_name'], $data['guest_phone'] ?? null, $data['guest_email'] ?? null);
+                $updated++;
+            }
+        }
+
+        return redirect()->route('admin.bookings.edit-order', $order)->with('status', "Updated guest details on {$updated} session(s).");
+    }
+
+    public function removeTime(Request $request, Booking $booking)
+    {
+        $this->authorizeCanManageBookings();
+
+        $data = $request->validate([
+            'court_slot_ids' => ['required', 'array', 'min:1'],
+            'court_slot_ids.*' => ['integer', 'distinct', 'exists:court_slots,id'],
+        ]);
+
+        try {
+            $booking = $this->bookings->removeSlotsFromBooking($booking, $data['court_slot_ids']);
+        } catch (InvalidBookingTransitionException|SlotUnavailableException|\InvalidArgumentException $e) {
+            return back()->withErrors(['court_slot_ids' => $e->getMessage()]);
+        }
+
+        return redirect()->route('admin.bookings.edit', $booking)->with('status', "Removed time from booking {$booking->booking_code}.");
+    }
+
+    /**
+     * Adds several hand-picked (date, hour-block) sessions onto a booking in
+     * one go - each row can have its own time (e.g. Aug 18 6-8pm, Aug 21
+     * 4-11pm). All-or-nothing: any row that's no longer available aborts the
+     * whole batch with a clear error instead of silently dropping it. See
+     * BookingService::addMultipleSessions().
+     */
+    public function addSessions(Request $request, Booking $booking)
+    {
+        $this->authorizeCanManageBookings();
+
+        $data = $request->validate([
+            'sessions' => ['required', 'array', 'min:1'],
+            'sessions.*.court_slot_ids' => ['required', 'array', 'min:1'],
+            'sessions.*.court_slot_ids.*' => ['integer', 'distinct', 'exists:court_slots,id'],
+        ]);
+
+        try {
+            $created = $this->bookings->addMultipleSessions($booking, $data['sessions'], Auth::user());
+        } catch (InvalidBookingTransitionException|SlotUnavailableException|NonContiguousSlotsException|\InvalidArgumentException $e) {
+            return back()->withErrors(['sessions' => $e->getMessage()]);
+        }
+
+        $status = "Added {$created->count()} new date(s) to {$booking->booking_code}.";
+
+        // addMultipleSessions() always wraps the booking in an order (see
+        // BookingService::ensureOrder()) - once it has sibling dates, the
+        // order-level edit page is the right place to land back on (shows
+        // every date together), not the single-session edit page this
+        // request's anchor booking happens to be attached to.
+        $orderId = $created->first()->booking_order_id ?? $booking->booking_order_id;
+
+        if ($orderId) {
+            return redirect()->route('admin.bookings.edit-order', $orderId)->with('status', $status);
+        }
+
+        return redirect()->route('admin.bookings.edit', $booking)->with('status', $status);
+    }
+
+    /**
      * "Reschedule" on a multi-session order lands here first: which of the
      * order's sessions actually needs to move? Each session links on to
      * editReschedule() below for that one specific booking - reschedules
@@ -543,6 +688,35 @@ class BookingController extends Controller
         }
 
         return redirect()->route('admin.bookings.holds.index')->with('status', "Hold on {$booking->booking_code} cancelled.");
+    }
+
+    /**
+     * Removes just ONE date/session from a multi-date order (see the "Edit
+     * order" page) - deliberately does NOT reuse cancel() above, same
+     * reasoning as cancelHold(): cancel() cascades to
+     * BookingOrderService::cancel() whenever the target has an order, which
+     * would cancel every OTHER session in the order too instead of just this
+     * one date. Calls BookingService::cancel() directly, bypassing the
+     * order-wide cascade.
+     */
+    public function cancelSession(Request $request, Booking $booking)
+    {
+        $this->authorizeCanManageBookings();
+
+        $data = $request->validate(['reason' => ['nullable', 'string', 'max:255']]);
+        $orderId = $booking->booking_order_id;
+
+        try {
+            $this->bookings->cancel($booking, Auth::user(), $data['reason'] ?? null);
+        } catch (InvalidBookingTransitionException $e) {
+            return back()->withErrors(['booking' => $e->getMessage()]);
+        }
+
+        if ($orderId) {
+            return redirect()->route('admin.bookings.edit-order', $orderId)->with('status', "Removed {$booking->booking_code} from the order.");
+        }
+
+        return redirect()->route('admin.bookings.index')->with('status', "Booking {$booking->booking_code} cancelled.");
     }
 
     /**
