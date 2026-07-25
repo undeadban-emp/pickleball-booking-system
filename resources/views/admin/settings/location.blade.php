@@ -14,8 +14,8 @@
     @endif
 
     @php
-        $__lat = $settings->map_lat ?? 14.5995;
-        $__lng = $settings->map_lng ?? 120.9842;
+        $__lat = $settings->map_lat ?? 9.0509526;
+        $__lng = $settings->map_lng ?? 126.2083256;
         $__styles = [
             'standard' => ['label' => 'Standard', 'icon' => 'ph-map-trifold'],
             'light' => ['label' => 'Light', 'icon' => 'ph-sun'],

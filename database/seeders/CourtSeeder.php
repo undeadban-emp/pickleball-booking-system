@@ -18,8 +18,8 @@ class CourtSeeder extends Seeder
         $hours = OperatingHours::current();
 
         $courts = [
-            ['name' => 'Court A, the show court', 'location' => 'Riverside strip, near the entrance', 'default_price' => 300],
-            ['name' => 'Court B', 'location' => 'Riverside strip', 'default_price' => 300],
+            ['name' => 'Court A, the show court', 'location' => 'Riverside strip, near the entrance', 'default_price' => 250],
+            ['name' => 'Court B', 'location' => 'Riverside strip', 'default_price' => 250],
             ['name' => 'Court C', 'location' => 'Riverside strip, shaded side', 'default_price' => 250],
         ];
 

@@ -28,6 +28,7 @@ use App\Http\Controllers\CourtBookingController;
 use App\Http\Controllers\Customer\BookingController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicBookingController;
+use App\Http\Controllers\PickleballController;
 use App\Http\Controllers\PublicOrderController;
 use App\Http\Controllers\QuickBookController;
 use Illuminate\Support\Facades\Route;
@@ -48,6 +49,11 @@ Route::get('/', function () {
             ?: Court::where('is_active', true)->whereNotNull('location')->value('location'),
     ]);
 });
+
+// Public, no auth middleware - device-gated APK auto-update check for the
+// Flutter app. See PickleballController::authorizeDevice() for the gate.
+Route::get('api/pickleball/app/version/{code}/{device}', [PickleballController::class, 'appVersion'])->name('pickleball.app.version');
+Route::get('api/pickleball/app/download/{code}/{device}', [PickleballController::class, 'appDownload'])->name('pickleball.app.download');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthenticatedSessionController::class, 'create'])->name('login');

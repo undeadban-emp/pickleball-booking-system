@@ -49,8 +49,8 @@ class DatabaseSeeder extends Seeder
         PaymentMethod::updateOrCreate(
             ['name' => 'GCash'],
             [
-                'account_number' => '0917 000 0000',
-                'account_name' => 'Kitchen Line',
+                'account_number' => '09989599819',
+                'account_name' => 'Paddle Ground Tandag',
                 'is_active' => true,
                 'sort_order' => 0,
             ]
