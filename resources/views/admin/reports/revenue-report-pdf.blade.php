@@ -369,6 +369,36 @@
     </table>
 
     <div class="section">
+        <p class="section-title">Hold Revenue (HOLD)</p>
+        <table class="lost-box">
+            <tr>
+                <td class="lost-cell">
+                    <p class="kpi-label">Currently on hold (as of today)</p>
+                    <p class="kpi-value">₱{{ number_format($holdRevenue['total'], 2) }}</p>
+                    <p class="kpi-sub">{{ $holdRevenue['count'] }} booking{{ $holdRevenue['count'] === 1 ? '' : 's' }}</p>
+                </td>
+            </tr>
+        </table>
+
+        @if ($holdRevenue['byReason']->isNotEmpty())
+            <table class="data">
+                <thead>
+                    <tr><th>Reason</th><th class="num">Bkg</th><th class="num">Total</th></tr>
+                </thead>
+                <tbody>
+                    @foreach ($holdRevenue['byReason'] as $reason => $data)
+                        <tr>
+                            <td>{{ $reason }}</td>
+                            <td class="num">{{ $data['count'] }}</td>
+                            <td class="num">₱{{ number_format($data['total'], 2) }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        @endif
+    </div>
+
+    <div class="section">
         <p class="section-title">Lost Revenue (Rejected &amp; Cancelled)</p>
         <table class="lost-box">
             <tr>

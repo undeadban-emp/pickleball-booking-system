@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Admin\Concerns\ExportsCsv;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
+use App\Models\BookingHold;
+use App\Models\CourtSlot;
 use App\Models\OperatingHours;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -26,6 +28,7 @@ class RevenueReportController extends Controller
             'byPaymentMethod' => $this->byPaymentMethod($from, $to),
             'bySource' => $this->bySource($from, $to),
             'pendingAging' => $this->pendingAging(),
+            'holdRevenue' => $this->holdRevenue(),
             'lost' => $this->lostRevenue($from, $to),
         ]);
     }
@@ -58,6 +61,7 @@ class RevenueReportController extends Controller
             'byPaymentMethod' => $this->byPaymentMethod($from, $to),
             'bySource' => $this->bySource($from, $to),
             'pendingAging' => $this->pendingAging(),
+            'holdRevenue' => $this->holdRevenue(),
             'lost' => $lost,
             'totalRevenue' => $totalRevenue,
             'totalBookings' => $totalBookings,
@@ -199,6 +203,40 @@ class RevenueReportController extends Controller
 
             return ['count' => $matching->count(), 'total' => $matching->sum('total_price')];
         });
+    }
+
+    /**
+     * Bookings currently sitting on_hold, right now - a live snapshot like
+     * pendingAging(), not a date-range figure, since "on hold" is a state a
+     * booking is in today, not something that happened within a window.
+     * BookingHold remembers exactly which court/date/time-range it held but
+     * not what it was worth (holdSlots() zeroes the booking's own
+     * total_price the moment it goes on hold), so the value is reconstructed
+     * by summing the CourtSlot price(s) that originally covered that range.
+     */
+    protected function holdRevenue(): array
+    {
+        $activeHolds = BookingHold::whereNull('resolved_at')->get();
+
+        $withValue = $activeHolds->map(function (BookingHold $hold) {
+            $value = CourtSlot::where('court_id', $hold->from_court_id)
+                ->where('slot_date', $hold->from_slot_date)
+                ->where('start_time', '>=', $hold->from_start_time)
+                ->where('start_time', '<', $hold->from_end_time)
+                ->sum('price');
+
+            return ['value' => $value, 'reason' => $hold->reason ?: 'Not specified'];
+        });
+
+        $byReason = $withValue->groupBy('reason')
+            ->map(fn ($g) => ['count' => $g->count(), 'total' => $g->sum('value')])
+            ->sortByDesc('total');
+
+        return [
+            'count' => $withValue->count(),
+            'total' => $withValue->sum('value'),
+            'byReason' => $byReason,
+        ];
     }
 
     protected function lostRevenue(Carbon $from, Carbon $to): array

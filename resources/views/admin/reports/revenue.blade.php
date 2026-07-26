@@ -116,6 +116,28 @@
         </div>
     </div>
 
+    {{-- Hold revenue --}}
+    <div class="mt-4 rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
+        <p class="text-sm font-semibold text-ink-950 dark:text-white">Hold revenue (HOLD)</p>
+        <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">Snapshot as of today, not the selected range - money currently paused on bookings put on hold that haven't been resolved yet.</p>
+        <div class="mt-3 rounded-xl border border-ink-100 bg-ink-50 px-4 py-3 dark:border-ink-800 dark:bg-ink-950">
+            <p class="text-xs text-ink-500 dark:text-ink-400">Currently on hold</p>
+            <p class="mt-1 font-display text-xl font-semibold text-ink-950 dark:text-white">₱{{ number_format($holdRevenue['total'], 2) }}</p>
+            <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">{{ $holdRevenue['count'] }} booking{{ $holdRevenue['count'] === 1 ? '' : 's' }}</p>
+        </div>
+
+        @if ($holdRevenue['byReason']->isNotEmpty())
+            <div class="mt-4 space-y-2">
+                @foreach ($holdRevenue['byReason'] as $reason => $data)
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="text-ink-700 dark:text-ink-300">{{ $reason }}</span>
+                        <span class="text-ink-500 dark:text-ink-400">{{ $data['count'] }} bkg — <span class="font-medium text-ink-900 dark:text-ink-100">₱{{ number_format($data['total'], 2) }}</span></span>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+    </div>
+
     {{-- Lost revenue --}}
     <div class="mt-4 rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
         <p class="text-sm font-semibold text-ink-950 dark:text-white">Lost revenue (rejected &amp; cancelled)</p>

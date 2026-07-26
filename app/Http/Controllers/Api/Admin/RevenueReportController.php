@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
+use App\Models\BookingHold;
+use App\Models\CourtSlot;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
@@ -30,6 +32,7 @@ class RevenueReportController extends Controller
                 'by_payment_method' => $this->byPaymentMethod($from, $to),
                 'by_source' => $this->bySource($from, $to),
                 'pending_aging' => $this->pendingAging(),
+                'hold_revenue' => $this->holdRevenue(),
                 'lost' => $this->lostRevenue($from, $to),
             ],
         ]);
@@ -130,6 +133,38 @@ class RevenueReportController extends Controller
 
             return ['count' => $matching->count(), 'total' => $matching->sum('total_price')];
         });
+    }
+
+    /**
+     * Bookings currently sitting on_hold, right now - a live snapshot like
+     * pendingAging(), not a date-range figure. BookingHold doesn't store a
+     * price snapshot (holdSlots() zeroes the booking's total_price), so the
+     * value is reconstructed from the CourtSlot price(s) that originally
+     * covered the held range.
+     */
+    protected function holdRevenue(): array
+    {
+        $activeHolds = BookingHold::whereNull('resolved_at')->get();
+
+        $withValue = $activeHolds->map(function (BookingHold $hold) {
+            $value = CourtSlot::where('court_id', $hold->from_court_id)
+                ->where('slot_date', $hold->from_slot_date)
+                ->where('start_time', '>=', $hold->from_start_time)
+                ->where('start_time', '<', $hold->from_end_time)
+                ->sum('price');
+
+            return ['value' => $value, 'reason' => $hold->reason ?: 'Not specified'];
+        });
+
+        $byReason = $withValue->groupBy('reason')
+            ->map(fn ($g) => ['count' => $g->count(), 'total' => $g->sum('value')])
+            ->sortByDesc('total');
+
+        return [
+            'count' => $withValue->count(),
+            'total' => $withValue->sum('value'),
+            'by_reason' => $byReason,
+        ];
     }
 
     protected function lostRevenue(Carbon $from, Carbon $to): array
