@@ -1,7 +1,8 @@
 <x-layouts.app>
 
     @php
-        $__facebookUrl = \App\Models\OperatingHours::current()->facebook_url;
+        $__brand = \App\Models\OperatingHours::current();
+        $__facebookUrl = $__brand->facebook_url;
     @endphp
 
     @if ($__facebookUrl)
@@ -74,15 +75,11 @@
                 @endif
 
                 <h1 class="mt-4 font-display text-4xl font-semibold tracking-tight text-white md:text-5xl lg:text-6xl">
-                    Book Your Perfect<br><span class="text-accent-400">Pickleball Court</span>
+                    {{-- {{ $__brand->show_brand_text ? $__brand->brand_text : '' }}<br> --}}
+                    <span class="text-accent-400">{{ $__brand->show_brand_text ? $__brand->brand_text : '' }}</span>
                 </h1>
                 <p class="mt-5 max-w-md text-base leading-relaxed text-ink-300">
-                    @if ($activeCourtsCount > 1)
-                        Choose from {{ $activeCourtsCount }} outdoor courts.
-                    @else
-                        Book our outdoor court.
-                    @endif
-                    <span class="font-semibold text-white">View real-time availability</span> at a glance, pay by GCash, and go.
+                    Paddle&rsquo;s hot. Hit the ground.
                 </p>
                 <div class="mt-8 flex flex-wrap items-center gap-3">
                     <a href="#availability" class="inline-flex items-center gap-2 rounded-full bg-accent-500 px-6 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.98] hover:bg-accent-400">
