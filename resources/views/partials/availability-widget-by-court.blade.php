@@ -1,7 +1,9 @@
+@php $__operatingHours = \App\Models\OperatingHours::current(); @endphp
+
 <section
     id="availability"
     class="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8"
-    x-data="availabilityGrid({ availabilityUrl: '{{ url('/api/availability') }}', isAuthenticated: {{ auth()->check() ? 'true' : 'false' }}, periodBoundaries: @js(\App\Models\OperatingHours::current()->periodBoundaries()), periodEnds: @js(\App\Models\OperatingHours::current()->periodEnds()) })"
+    x-data="availabilityGrid({ availabilityUrl: '{{ url('/api/availability') }}', isAuthenticated: {{ auth()->check() ? 'true' : 'false' }}, periodBoundaries: @js($__operatingHours->periodBoundaries()), periodEnds: @js($__operatingHours->periodEnds()), maxBookingHours: {{ $__operatingHours->max_customer_booking_hours ?? 24 }} })"
 >
     <div class="overflow-hidden rounded-3xl border border-ink-100 dark:border-ink-800">
         {{-- Header bar --}}
@@ -158,7 +160,14 @@
 
             <div class="mt-3 min-h-90 rounded-2xl border border-ink-100 dark:border-ink-800">
                 <template x-if="loading">
-                    <p class="p-6 text-sm text-ink-500 dark:text-ink-400">Loading availability…</p>
+                    <div class="flex min-h-90 flex-col items-center justify-center gap-3">
+                        @if ($__operatingHours->logoUrl())
+                            <img src="{{ $__operatingHours->logoUrl() }}" alt="" class="h-12 w-12 animate-zoom-pulse">
+                        @else
+                            <x-logo-mark class="h-12 w-12 animate-zoom-pulse" />
+                        @endif
+                        <p class="text-sm text-ink-500 dark:text-ink-400">Loading availability…</p>
+                    </div>
                 </template>
 
                 <template x-if="!loading && error">

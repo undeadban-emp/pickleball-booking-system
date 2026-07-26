@@ -6,6 +6,7 @@ use App\Exceptions\NonContiguousSlotsException;
 use App\Exceptions\SlotUnavailableException;
 use App\Models\BookingOrder;
 use App\Models\Court;
+use App\Models\OperatingHours;
 use App\Services\BookingOrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,7 +19,7 @@ class QuickBookController extends Controller
     {
         $rules = [
             'court_id' => ['required', 'integer', 'exists:courts,id'],
-            'court_slot_ids' => ['required', 'array', 'min:1', 'max:24'],
+            'court_slot_ids' => ['required', 'array', 'min:1', 'max:'.(OperatingHours::current()->max_customer_booking_hours ?? 24)],
             'court_slot_ids.*' => ['integer', 'distinct', 'exists:court_slots,id'],
         ];
 

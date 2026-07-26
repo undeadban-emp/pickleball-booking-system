@@ -1,4 +1,5 @@
 import { startPolling } from './poll';
+import { debounce } from './debounce';
 
 export default function adminBookingForm({ courts, slotsUrlBase, periodBoundaries, periodEnds, initialCourtId, expectedHours, singleSession = false, bookingSlots = [] }) {
     const pad = (n) => String(n).padStart(2, '0');
@@ -201,6 +202,14 @@ export default function adminBookingForm({ courts, slotsUrlBase, periodBoundarie
         init() {
             if (this.courtId) this.fetchSlots();
 
+            // Debounces user-triggered date/court switches (see
+            // onDateChange()/onCourtChange() below) so rapidly tapping
+            // through several dates or courts fires one request for the
+            // final pick instead of one per tap - avoids tripping the
+            // availability-read rate limit. The initial load above stays
+            // immediate/undebounced.
+            this._debouncedFetch = debounce(() => this.fetchSlots(), 350);
+
             // Background poll so a slot someone else just booked disappears
             // from the list (and gets kicked out of the current selection)
             // without the admin having to manually refresh the page. Pauses
@@ -218,13 +227,15 @@ export default function adminBookingForm({ courts, slotsUrlBase, periodBoundarie
         // for the whole booking), so the selection can't survive this.
         onCourtChange() {
             this.clearSelection();
-            this.fetchSlots();
+            this.loading = true;
+            this._debouncedFetch();
         },
 
         // Just browsing to a different day's availability for the same
         // court - keep whatever was already picked on other dates.
         onDateChange() {
-            this.fetchSlots();
+            this.loading = true;
+            this._debouncedFetch();
         },
 
         applyFilters(slots) {

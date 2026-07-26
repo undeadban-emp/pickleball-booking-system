@@ -1,6 +1,8 @@
 import { startPolling } from './poll';
+import { debounce } from './debounce';
 
-export default function availabilityGrid({ availabilityUrl, isAuthenticated, periodBoundaries, periodEnds }) {
+export default function availabilityGrid({ availabilityUrl, isAuthenticated, periodBoundaries, periodEnds, maxBookingHours }) {
+    const bookingHourCap = maxBookingHours || 24;
     const pad = (n) => String(n).padStart(2, '0');
     const toDateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     const toMinutes = (hhmm) => {
@@ -91,6 +93,13 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
         init() {
             this.fetchAvailability();
 
+            // Debounces user-triggered date switches (see selectDate()) so
+            // rapidly tapping through several dates fires one request for
+            // the final pick instead of one per tap - avoids tripping the
+            // availability-read rate limit. The initial load above stays
+            // immediate/undebounced.
+            this._debouncedFetch = debounce(() => this.fetchAvailability(), 350);
+
             // Background poll so a slot someone else just booked updates here
             // live - including kicking out the current selection with a
             // warning if it was picked out from under this visitor. Pauses
@@ -123,7 +132,10 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
             // anchored to whatever was on screen a moment ago.
             this.showReserveSheet = false;
             this.showQuickDetails = false;
-            this.fetchAvailability();
+            // Shown immediately so the UI doesn't look frozen while the
+            // debounce below waits out a possible run of further taps.
+            this.loading = true;
+            this._debouncedFetch();
         },
 
         get visibleDates() {
@@ -329,6 +341,23 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
             if (this.pickedSlots[slot.id]) {
                 delete this.pickedSlots[slot.id];
             } else {
+                // Mirrors the server-side cap in StoreBookingRequest/
+                // QuickBookController/CourtBookingController, sourced from
+                // the admin-configurable OperatingHours::max_customer_booking_hours
+                // - staff walk-in bookings have no such cap, but this widget
+                // is customer-facing only, so it always applies here.
+                if (Object.keys(this.pickedSlots).length >= bookingHourCap) {
+                    if (window.Swal) {
+                        window.Swal.fire({
+                            title: `${bookingHourCap}-hour limit reached`,
+                            text: `You can select up to ${bookingHourCap} hours in one booking. Remove a selected hour before adding another, or complete this booking first.`,
+                            icon: 'warning',
+                            confirmButtonText: 'Got it',
+                            confirmButtonColor: '#111827',
+                        });
+                    }
+                    return;
+                }
                 this.pickedSlots[slot.id] = { ...slot, slot_date: this.selectedDateStr, courtName: court.name };
             }
 

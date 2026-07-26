@@ -38,6 +38,7 @@ class SettingsController extends Controller
             'show_brand_text' => ['nullable', 'boolean'],
             'brand_text' => ['required', 'string', 'max:60'],
             'payment_hold_minutes' => ['nullable', 'integer', 'min:1', 'max:1440'],
+            'max_customer_booking_hours' => ['nullable', 'integer', 'min:1', 'max:168'],
             'facebook_url' => ['nullable', 'url', 'max:255'],
         ]);
 
@@ -49,6 +50,7 @@ class SettingsController extends Controller
             'show_brand_text' => $request->boolean('show_brand_text'),
             'brand_text' => $data['brand_text'],
             'payment_hold_minutes' => $data['payment_hold_minutes'] ?? null,
+            'max_customer_booking_hours' => $data['max_customer_booking_hours'] ?? 24,
             'facebook_url' => $data['facebook_url'] ?? null,
         ];
 

@@ -161,6 +161,27 @@
             </div>
         </div>
 
+        <div class="col-span-full rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
+            <p class="text-sm font-semibold text-ink-950 dark:text-white">Customer booking limit</p>
+            <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">The most hours a guest or logged-in customer can select in a single booking submission. Doesn't apply to walk-in bookings staff create from the admin panel.</p>
+
+            <div class="mt-4 flex flex-col gap-1.5 sm:w-48">
+                <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Hours</label>
+                <input
+                    name="max_customer_booking_hours"
+                    type="number"
+                    min="1"
+                    max="168"
+                    value="{{ old('max_customer_booking_hours', $settings->max_customer_booking_hours) }}"
+                    placeholder="e.g. 24"
+                    class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
+                >
+                @error('max_customer_booking_hours')
+                    <p class="text-xs text-rose-600 dark:text-rose-400">{{ $message }}</p>
+                @enderror
+            </div>
+        </div>
+
         <button type="submit" class="col-span-full w-fit rounded-full bg-ink-950 px-6 py-3 text-sm font-semibold text-white hover:bg-ink-800 dark:bg-accent-500 dark:text-ink-950 dark:hover:bg-accent-400">
             Save settings
         </button>

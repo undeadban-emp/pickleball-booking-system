@@ -3,7 +3,7 @@
     <section
         class="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8"
         :class="selectedSlots.length > 0 ? 'pb-24' : ''"
-        x-data="bookingCalendar({ courtId: {{ $court->id }}, slotsUrl: '{{ url('/api/courts/'.$court->id.'/slots') }}', periodBoundaries: @js($periodBoundaries), periodEnds: @js($periodEnds) })"
+        x-data="bookingCalendar({ courtId: {{ $court->id }}, slotsUrl: '{{ url('/api/courts/'.$court->id.'/slots') }}', periodBoundaries: @js($periodBoundaries), periodEnds: @js($periodEnds), maxBookingHours: {{ $maxBookingHours }} })"
     >
         <a href="{{ route('book.index') }}" class="inline-flex items-center gap-1.5 text-sm font-medium text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-white">
             <i class="ph ph-arrow-left"></i>

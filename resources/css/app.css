@@ -22,6 +22,16 @@
     }
 }
 
+/* Zoom in/out pulse for the logo shown while availability is loading (see
+   availability-widget-by-court.blade.php / availability-widget-grid.blade.php). */
+@keyframes zoom-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+}
+.animate-zoom-pulse {
+    animation: zoom-pulse 1.2s ease-in-out infinite;
+}
+
 /* Light-only for now: dark: utilities only activate under an explicit .dark
    class (never applied), instead of following the OS/browser color scheme. */
 @custom-variant dark (&:where(.dark, .dark *));

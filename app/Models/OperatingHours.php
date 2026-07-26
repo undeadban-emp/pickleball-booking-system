@@ -25,6 +25,7 @@ class OperatingHours extends Model
         'period_evening_start',
         'period_evening_end',
         'payment_hold_minutes',
+        'max_customer_booking_hours',
         'map_location',
         'map_lat',
         'map_lng',

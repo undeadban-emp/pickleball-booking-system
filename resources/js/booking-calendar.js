@@ -1,6 +1,7 @@
 import { startPolling } from './poll';
 
-export default function bookingCalendar({ courtId, slotsUrl, periodBoundaries, periodEnds }) {
+export default function bookingCalendar({ courtId, slotsUrl, periodBoundaries, periodEnds, maxBookingHours }) {
+    const bookingHourCap = maxBookingHours || 24;
     const pad = (n) => String(n).padStart(2, '0');
     const toDateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     const toMinutes = (hhmm) => {
@@ -223,6 +224,23 @@ export default function bookingCalendar({ courtId, slotsUrl, periodBoundaries, p
             if (this.pickedSlots[slot.id]) {
                 delete this.pickedSlots[slot.id];
             } else {
+                // Mirrors the server-side cap in StoreBookingRequest/
+                // QuickBookController/CourtBookingController, sourced from
+                // the admin-configurable OperatingHours::max_customer_booking_hours
+                // - staff walk-in bookings have no such cap, but this page
+                // is customer-facing only, so it always applies here.
+                if (Object.keys(this.pickedSlots).length >= bookingHourCap) {
+                    if (window.Swal) {
+                        window.Swal.fire({
+                            title: `${bookingHourCap}-hour limit reached`,
+                            text: `You can select up to ${bookingHourCap} hours in one booking. Remove a selected hour before adding another, or complete this booking first.`,
+                            icon: 'warning',
+                            confirmButtonText: 'Got it',
+                            confirmButtonColor: '#111827',
+                        });
+                    }
+                    return;
+                }
                 this.pickedSlots[slot.id] = { ...slot, slot_date: this.selectedDateStr };
             }
         },

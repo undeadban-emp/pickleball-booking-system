@@ -27,17 +27,20 @@ class CourtBookingController extends Controller
 
     public function show(Court $court)
     {
+        $settings = OperatingHours::current();
+
         return view('book.show', [
             'court' => $court,
-            'periodBoundaries' => OperatingHours::current()->periodBoundaries(),
-            'periodEnds' => OperatingHours::current()->periodEnds(),
+            'periodBoundaries' => $settings->periodBoundaries(),
+            'periodEnds' => $settings->periodEnds(),
+            'maxBookingHours' => $settings->max_customer_booking_hours ?? 24,
         ]);
     }
 
     public function store(Request $request, Court $court)
     {
         $rules = [
-            'court_slot_ids' => ['required', 'array', 'min:1', 'max:24'],
+            'court_slot_ids' => ['required', 'array', 'min:1', 'max:'.(OperatingHours::current()->max_customer_booking_hours ?? 24)],
             'court_slot_ids.*' => ['integer', 'distinct', 'exists:court_slots,id'],
         ];
 
