@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureCourtSlotsAreFresh;
 use App\Http\Middleware\EnsureUserHasRole;
 use App\Http\Middleware\VerifyAppToken;
 use Illuminate\Foundation\Application;
@@ -43,7 +44,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Generous baseline against raw flooding of any page not covered by
         // a more specific limiter below (see RateLimiter::for('global', ...)
         // in AppServiceProvider).
-        $middleware->web(append: ['throttle:global']);
+        $middleware->web(append: ['throttle:global', EnsureCourtSlotsAreFresh::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
