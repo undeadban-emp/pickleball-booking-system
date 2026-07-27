@@ -55,15 +55,17 @@ export default function adminBookingForm({ courts, slotsUrlBase, periodBoundarie
         minDate: todayStr,
 
         // Date strip (same style as the home page booking widget): a
-        // scrollable window over the next 30 days, browsed with prev/next
-        // instead of a plain <input type="date">. Optional - only used by
-        // pages whose markup includes the strip (currently just the "New
-        // Booking" walk-in form); other adminBookingForm() consumers keep
-        // their plain date input and simply never touch these.
+        // scrollable window over the next 60 days, browsed with prev/next
+        // instead of a plain <input type="date">. 60 matches SlotGenerator's
+        // rolling availability window (see app/Support/SlotGenerator.php),
+        // so this never cuts off before real slot data does. Optional - only
+        // used by pages whose markup includes the strip (currently just the
+        // "New Booking" walk-in form); other adminBookingForm() consumers
+        // keep their plain date input and simply never touch these.
         dateStrip: (() => {
             const days = [];
             const base = new Date();
-            for (let i = 0; i < 30; i++) {
+            for (let i = 0; i < 60; i++) {
                 const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
                 days.push({
                     dateStr: toDateStr(d),
