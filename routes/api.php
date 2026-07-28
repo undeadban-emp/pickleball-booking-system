@@ -27,7 +27,9 @@ use Illuminate\Support\Facades\Route;
 Route::middleware('throttle:availability-read')->group(function () {
     Route::get('/courts', [CourtController::class, 'index']);
     Route::get('/courts/{court}/slots', [CourtController::class, 'slots']);
+    Route::get('/courts/{court}/fully-booked-dates', [CourtController::class, 'fullyBookedDates']);
     Route::get('/availability', [AvailabilityController::class, 'index']);
+    Route::get('/availability/fully-booked-dates', [AvailabilityController::class, 'fullyBookedDates']);
 });
 
 // Everything else requires the official Kitchen Line app header. It only

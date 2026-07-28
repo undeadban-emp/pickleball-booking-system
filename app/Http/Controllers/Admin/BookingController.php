@@ -11,6 +11,7 @@ use App\Models\BookingHold;
 use App\Models\BookingOrder;
 use App\Models\BookingRescheduleLog;
 use App\Models\Court;
+use App\Models\CourtSlot;
 use App\Models\OperatingHours;
 use App\Services\BookingOrderService;
 use App\Services\BookingService;
@@ -118,10 +119,30 @@ class BookingController extends Controller
             ->unique('booking_id')
             ->values();
 
+        // A day is "fully booked" when every generated slot across every
+        // active court is either blocked or already held by a
+        // pending/confirmed booking - i.e. nothing left for a walk-in to
+        // grab. Computed for the whole visible calendar grid (not just the
+        // selected day) so the mini month calendar can flag red days at a
+        // glance.
+        $gridStart = $date->copy()->startOfMonth()->startOfWeek(Carbon::SUNDAY);
+        $gridEnd = $date->copy()->endOfMonth()->endOfWeek(Carbon::SATURDAY);
+
+        $activeCourtIds = Court::where('is_active', true)->pluck('id');
+
+        $fullyBookedDates = CourtSlot::whereIn('court_id', $activeCourtIds)
+            ->whereBetween('slot_date', [$gridStart->toDateString(), $gridEnd->toDateString()])
+            ->with(['bookings' => fn ($q) => $q->whereIn('status', ['pending_payment', 'confirmed'])])
+            ->get()
+            ->groupBy(fn (CourtSlot $slot) => $slot->slot_date->toDateString())
+            ->filter(fn ($slots) => $slots->every(fn (CourtSlot $slot) => $slot->status === 'blocked' || $slot->bookings->isNotEmpty()))
+            ->keys();
+
         return view('admin.bookings.schedule', [
             'date' => $date,
             'bookings' => $bookings,
             'rescheduledAway' => $rescheduledAway,
+            'fullyBookedDates' => $fullyBookedDates,
         ]);
     }
 

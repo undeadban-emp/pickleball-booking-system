@@ -73,10 +73,16 @@ export default function adminBookingForm({ courts, slotsUrlBase, periodBoundarie
                     day: d.getDate(),
                     month: d.toLocaleDateString('en-US', { month: 'short' }),
                     isToday: i === 0,
+                    isFullyBooked: false,
                 });
             }
             return days;
         })(),
+        // Populated by loadFullyBookedDates() for whichever court is
+        // selected - covers the same 60-day span as dateStrip, so both it
+        // and the calendar popover's cells read from this one source of
+        // truth instead of fetching per month separately.
+        fullyBookedDates: new Set(),
         dateWindowSize: 4,
         dateWindowStart: 0,
         visibleDates() {
@@ -101,6 +107,31 @@ export default function adminBookingForm({ courts, slotsUrlBase, periodBoundarie
         calendarLabel() {
             return this.calendarCursor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
         },
+        // Fetches which dates in the 60-day dateStrip span are fully booked
+        // for the selected court, then stamps isFullyBooked onto both the
+        // date strip and the calendar popover's cells (via calendarWeeks())
+        // so both read from the same fullyBookedDates set.
+        async loadFullyBookedDates() {
+            if (!this.courtId) return;
+
+            const from = this.dateStrip[0].dateStr;
+            const to = this.dateStrip[this.dateStrip.length - 1].dateStr;
+
+            try {
+                const res = await fetch(`${slotsUrlBase}/${this.courtId}/fully-booked-dates?from=${from}&to=${to}`, {
+                    headers: { Accept: 'application/json' },
+                    cache: 'no-store',
+                });
+                if (!res.ok) return;
+                const body = await res.json();
+                this.fullyBookedDates = new Set(body.data ?? []);
+                this.dateStrip.forEach((d) => {
+                    d.isFullyBooked = this.fullyBookedDates.has(d.dateStr);
+                });
+            } catch (e) {
+                // Non-critical - the strip/calendar just won't highlight full days.
+            }
+        },
         calendarWeeks() {
             const year = this.calendarCursor.getFullYear();
             const month = this.calendarCursor.getMonth();
@@ -120,6 +151,7 @@ export default function adminBookingForm({ courts, slotsUrlBase, periodBoundarie
                     isToday: ds === todayStr,
                     isSelected: ds === this.dateStr,
                     isAvailable: validSet.has(ds),
+                    isFullyBooked: this.fullyBookedDates.has(ds),
                 });
             }
             while (cells.length % 7 !== 0) cells.push(null);
@@ -202,7 +234,11 @@ export default function adminBookingForm({ courts, slotsUrlBase, periodBoundarie
         expectedHours: expectedHours || null,
 
         init() {
-            if (this.courtId) this.fetchSlots();
+            if (this.courtId) {
+                this.fetchSlots();
+                this.calendarCursor = new Date();
+                this.loadFullyBookedDates();
+            }
 
             // Debounces user-triggered date/court switches (see
             // onDateChange()/onCourtChange() below) so rapidly tapping
@@ -217,7 +253,10 @@ export default function adminBookingForm({ courts, slotsUrlBase, periodBoundarie
             // without the admin having to manually refresh the page. Pauses
             // while the tab is hidden so a backgrounded tab doesn't keep
             // polling for nothing.
-            startPolling(() => this.refreshSlots(), 7000);
+            startPolling(() => {
+                this.refreshSlots();
+                this.loadFullyBookedDates();
+            }, 7000);
         },
 
         get selectedCourt() {
@@ -231,6 +270,7 @@ export default function adminBookingForm({ courts, slotsUrlBase, periodBoundarie
             this.clearSelection();
             this.loading = true;
             this._debouncedFetch();
+            this.loadFullyBookedDates();
         },
 
         // Just browsing to a different day's availability for the same
@@ -277,6 +317,8 @@ export default function adminBookingForm({ courts, slotsUrlBase, periodBoundarie
 
                 if (this.slots.length === 0) {
                     this.error = 'No open slots on this date.';
+                } else if (this.slots.every((s) => s.status !== 'available')) {
+                    this.error = 'Fully booked — no open slots left on this date.';
                 }
             } catch (e) {
                 this.error = 'Could not load availability. Please try again.';
@@ -303,7 +345,7 @@ export default function adminBookingForm({ courts, slotsUrlBase, periodBoundarie
 
                 const body = await res.json();
                 const slots = this.applyFilters(body.data ?? []);
-                const stillOpenIds = new Set(slots.map((s) => s.id));
+                const stillOpenIds = new Set(slots.filter((s) => s.status === 'available').map((s) => s.id));
                 const lostIds = Object.values(this.pickedSlots)
                     .filter((s) => s.slot_date === this.dateStr && !stillOpenIds.has(s.id))
                     .map((s) => s.id);
@@ -319,10 +361,12 @@ export default function adminBookingForm({ courts, slotsUrlBase, periodBoundarie
             }
         },
 
-        // Only truly available slots ever reach this.slots (the API already
-        // filters to status=available), so every clickable cell here is
-        // bookable - the server re-checks under a row lock on submit too, in
-        // case someone else grabs the same slot in the meantime.
+        // this.slots now includes every slot for the date - blocked,
+        // pending, and booked ones stay in the list (shown disabled/red)
+        // instead of vanishing, so staff can see the day is busy instead of
+        // wondering where an hour went. Only status === 'available' is
+        // actually pickable; the server re-checks under a row lock on
+        // submit too, in case someone else grabs the same slot meanwhile.
         //
         // Independent checkbox-style selection: clicking any slot toggles
         // just that slot, no auto-fill of the range between two clicks.
@@ -336,7 +380,7 @@ export default function adminBookingForm({ courts, slotsUrlBase, periodBoundarie
         pickSlot(index) {
             this.warning = null;
             const slot = this.slots[index];
-            if (!slot) return;
+            if (!slot || slot.status !== 'available') return;
 
             let newPicked = { ...this.pickedSlots };
 

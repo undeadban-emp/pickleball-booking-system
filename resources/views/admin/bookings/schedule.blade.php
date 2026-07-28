@@ -125,11 +125,13 @@
                             $inMonth = $day->month === $date->month;
                             $isToday = $dayStr === $todayStr;
                             $isSelected = $dayStr === $selectedStr;
+                            $isFullyBooked = $fullyBookedDates->contains($dayStr);
                         @endphp
                         <a
                             href="{{ route('admin.bookings.schedule', ['date' => $dayStr]) }}"
+                            title="{{ $isFullyBooked ? 'Fully booked' : '' }}"
                             class="flex aspect-square items-center justify-center rounded-md text-xs transition-colors
-                                {{ $isSelected ? 'bg-accent-500 font-semibold text-ink-950' : ($isToday ? 'border border-accent-400 text-ink-900 dark:text-white' : 'text-ink-700 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800') }}
+                                {{ $isFullyBooked ? ($isSelected ? 'bg-rose-600 font-semibold text-white' : 'bg-rose-100 font-semibold text-rose-700 hover:bg-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:hover:bg-rose-900') : ($isSelected ? 'bg-accent-500 font-semibold text-ink-950' : ($isToday ? 'border border-accent-400 text-ink-900 dark:text-white' : 'text-ink-700 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800')) }}
                                 {{ ! $inMonth && ! $isSelected ? 'text-ink-300 dark:text-ink-700' : '' }}"
                         >
                             {{ $day->day }}
@@ -149,7 +151,14 @@
         {{-- Selected day's bookings --}}
         <div class="rounded-2xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
             <div class="flex items-center justify-between">
-                <h2 class="font-display text-lg font-semibold text-ink-950 dark:text-white">{{ $date->format('l, F j, Y') }}</h2>
+                <div class="flex items-center gap-2">
+                    <h2 class="font-display text-lg font-semibold text-ink-950 dark:text-white">{{ $date->format('l, F j, Y') }}</h2>
+                    @if ($fullyBookedDates->contains($selectedStr))
+                        <span class="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+                            Fully Booked
+                        </span>
+                    @endif
+                </div>
                 <span class="rounded-full bg-ink-100 px-2.5 py-1 text-xs font-semibold text-ink-600 dark:bg-ink-800 dark:text-ink-300">
                     {{ $bookings->count() }} booking{{ $bookings->count() === 1 ? '' : 's' }}
                 </span>

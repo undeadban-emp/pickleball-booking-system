@@ -152,7 +152,7 @@
                     <p class="mt-4 text-sm text-ink-500 dark:text-ink-400" x-text="error"></p>
                 </template>
 
-                <template x-if="!loading && !error">
+                <template x-if="!loading && slots.length > 0">
                     <div class="mt-4 space-y-4">
                         <template x-for="group in groupedSlots" :key="group.key">
                             <div>
@@ -165,8 +165,14 @@
                                         <button
                                             type="button"
                                             @click="pickSlot(item.index)"
+                                            :disabled="item.slot.status !== 'available'"
+                                            :title="item.slot.status === 'booked' ? 'Already booked' : (item.slot.status === 'pending' ? 'Payment pending' : (item.slot.status === 'blocked' ? 'Blocked' : ''))"
                                             class="rounded-lg border px-2 py-2.5 text-xs font-semibold transition-all"
-                                            :class="isSelected(item.index) ? 'border-accent-500 bg-accent-500 text-ink-950 shadow-sm scale-[1.02]' : 'border-sky-200 bg-sky-50 text-sky-800 hover:border-accent-400 hover:bg-accent-50 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200'"
+                                            :class="item.slot.status !== 'available'
+                                                ? 'cursor-not-allowed border-rose-200 bg-rose-50 text-rose-500 line-through dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400'
+                                                : (isSelected(item.index)
+                                                    ? 'cursor-pointer border-accent-500 bg-accent-500 text-ink-950 shadow-sm scale-[1.02]'
+                                                    : 'cursor-pointer border-sky-200 bg-sky-50 text-sky-800 hover:border-accent-400 hover:bg-accent-50 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200')"
                                             x-text="slotLabel(item.slot)"
                                         ></button>
                                     </template>

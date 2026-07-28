@@ -3,7 +3,7 @@
     <section
         class="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8"
         :class="selectedSlots.length > 0 ? 'pb-24' : ''"
-        x-data="bookingCalendar({ courtId: {{ $court->id }}, slotsUrl: '{{ url('/api/courts/'.$court->id.'/slots') }}', periodBoundaries: @js($periodBoundaries), periodEnds: @js($periodEnds), maxBookingHours: {{ $maxBookingHours }} })"
+        x-data="bookingCalendar({ courtId: {{ $court->id }}, slotsUrl: '{{ url('/api/courts/'.$court->id.'/slots') }}', fullyBookedUrl: '{{ url('/api/courts/'.$court->id.'/fully-booked-dates') }}', periodBoundaries: @js($periodBoundaries), periodEnds: @js($periodEnds), maxBookingHours: {{ $maxBookingHours }} })"
     >
         <a href="{{ route('book.index') }}" class="inline-flex items-center gap-1.5 text-sm font-medium text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-white">
             <i class="ph ph-arrow-left"></i>
@@ -41,11 +41,14 @@
                                 type="button"
                                 x-show="cell"
                                 :disabled="cell && cell.isPast"
+                                :title="cell && cell.isFullyBooked ? 'Fully booked' : ''"
                                 @click="cell && selectDate(cell.dateStr, cell.isPast)"
                                 class="relative aspect-square cursor-pointer rounded-xl text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:text-ink-300 dark:disabled:text-ink-700"
-                                :class="cell && selectedDateStr === cell.dateStr
-                                    ? 'bg-accent-500 text-ink-950'
-                                    : (cell && cell.isToday ? 'border border-accent-400 text-ink-900 dark:text-white' : 'text-ink-700 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800')"
+                                :class="cell && cell.isFullyBooked
+                                    ? (selectedDateStr === cell.dateStr ? 'bg-rose-600 text-white' : 'bg-rose-100 font-semibold text-rose-700 hover:bg-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:hover:bg-rose-900')
+                                    : (cell && selectedDateStr === cell.dateStr
+                                        ? 'bg-accent-500 text-ink-950'
+                                        : (cell && cell.isToday ? 'border border-accent-400 text-ink-900 dark:text-white' : 'text-ink-700 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800'))"
                             >
                                 <span x-text="cell ? cell.day : ''"></span>
                                 <span
@@ -101,10 +104,14 @@
                                                 <button
                                                     type="button"
                                                     @click="pickSlot(item.index)"
-                                                    class="cursor-pointer rounded-full border px-3 py-1.5 text-sm font-medium transition-colors"
-                                                    :class="isSelected(item.index)
-                                                        ? 'border-accent-500 bg-accent-500 text-white'
-                                                        : 'border-ink-200 text-ink-700 hover:border-accent-400 dark:border-ink-700 dark:text-ink-300'"
+                                                    :disabled="item.slot.status !== 'available'"
+                                                    :title="item.slot.status === 'booked' ? 'Already booked' : (item.slot.status === 'pending' ? 'Payment pending' : (item.slot.status === 'blocked' ? 'Blocked' : ''))"
+                                                    class="rounded-full border px-3 py-1.5 text-sm font-medium transition-colors"
+                                                    :class="item.slot.status !== 'available'
+                                                        ? 'cursor-not-allowed border-rose-200 bg-rose-50 text-rose-500 line-through dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400'
+                                                        : (isSelected(item.index)
+                                                            ? 'cursor-pointer border-accent-500 bg-accent-500 text-white'
+                                                            : 'cursor-pointer border-ink-200 text-ink-700 hover:border-accent-400 dark:border-ink-700 dark:text-ink-300')"
                                                     x-text="slotLabel(item.slot)"
                                                 ></button>
                                             </template>

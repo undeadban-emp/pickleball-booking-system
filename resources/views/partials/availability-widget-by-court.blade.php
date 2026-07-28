@@ -3,7 +3,7 @@
 <section
     id="availability"
     class="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8"
-    x-data="availabilityGrid({ availabilityUrl: '{{ url('/api/availability') }}', isAuthenticated: {{ auth()->check() ? 'true' : 'false' }}, periodBoundaries: @js($__operatingHours->periodBoundaries()), periodEnds: @js($__operatingHours->periodEnds()), maxBookingHours: {{ $__operatingHours->max_customer_booking_hours ?? 24 }} })"
+    x-data="availabilityGrid({ availabilityUrl: '{{ url('/api/availability') }}', fullyBookedUrl: '{{ url('/api/availability/fully-booked-dates') }}', isAuthenticated: {{ auth()->check() ? 'true' : 'false' }}, periodBoundaries: @js($__operatingHours->periodBoundaries()), periodEnds: @js($__operatingHours->periodEnds()), maxBookingHours: {{ $__operatingHours->max_customer_booking_hours ?? 24 }} })"
 >
     <div class="overflow-hidden rounded-3xl border border-ink-100 dark:border-ink-800">
         {{-- Header bar --}}
@@ -65,8 +65,10 @@
                                         type="button"
                                         @click="pickCalendarDate(cell)"
                                         :disabled="!cell || !cell.isAvailable"
+                                        :title="cell && cell.isFullyBooked ? 'Fully booked' : ''"
                                         class="relative flex h-8 w-8 items-center justify-center rounded-lg text-xs transition-colors"
                                         :class="!cell ? 'invisible' : (
+                                            cell.isFullyBooked ? (cell.isSelected ? 'bg-rose-600 font-semibold text-white' : 'bg-rose-100 font-semibold text-rose-700 hover:bg-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:hover:bg-rose-900') :
                                             cell.isSelected ? 'bg-accent-500 font-semibold text-white' :
                                             !cell.isAvailable ? 'text-ink-300 cursor-not-allowed dark:text-ink-700' :
                                             cell.isToday ? 'border border-accent-400 text-accent-700 hover:bg-accent-50 dark:text-accent-400' :
@@ -100,12 +102,17 @@
                         <button
                             type="button"
                             @click="selectDate(d.dateStr)"
+                            :title="d.isFullyBooked ? 'Fully booked' : ''"
                             class="relative flex flex-col items-center rounded-xl border px-1 py-2.5 transition-colors"
-                            :class="selectedDateStr === d.dateStr
-                                ? 'border-accent-500 bg-accent-500 text-white'
-                                : (d.isToday
-                                    ? 'border-accent-300 bg-white text-ink-700 hover:border-accent-500 dark:border-accent-800 dark:bg-ink-900 dark:text-ink-300'
-                                    : 'border-ink-100 bg-white text-ink-700 hover:border-accent-400 dark:border-ink-800 dark:bg-ink-900 dark:text-ink-300')"
+                            :class="d.isFullyBooked
+                                ? (selectedDateStr === d.dateStr
+                                    ? 'border-rose-600 bg-rose-600 text-white'
+                                    : 'border-rose-200 bg-rose-50 text-rose-600 hover:border-rose-400 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400')
+                                : (selectedDateStr === d.dateStr
+                                    ? 'border-accent-500 bg-accent-500 text-white'
+                                    : (d.isToday
+                                        ? 'border-accent-300 bg-white text-ink-700 hover:border-accent-500 dark:border-accent-800 dark:bg-ink-900 dark:text-ink-300'
+                                        : 'border-ink-100 bg-white text-ink-700 hover:border-accent-400 dark:border-ink-800 dark:bg-ink-900 dark:text-ink-300'))"
                         >
                             <span
                                 x-show="d.isToday"
@@ -114,6 +121,11 @@
                             <span class="text-[10px] font-medium uppercase" x-text="d.weekday"></span>
                             <span class="font-display text-base font-semibold sm:text-lg" x-text="d.day"></span>
                             <span class="text-[10px]" x-text="d.month"></span>
+                            <span
+                                x-show="d.isFullyBooked"
+                                class="mt-0.5 text-[8px] font-bold tracking-wide uppercase"
+                                :class="selectedDateStr === d.dateStr ? 'text-white' : 'text-rose-600 dark:text-rose-400'"
+                            >Fully Booked</span>
                             <span
                                 x-show="hasPickOn(d.dateStr) && selectedDateStr !== d.dateStr"
                                 x-cloak

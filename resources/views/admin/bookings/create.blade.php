@@ -91,8 +91,10 @@
                                                     type="button"
                                                     @click="pickCalendarDate(cell)"
                                                     :disabled="!cell || !cell.isAvailable"
+                                                    :title="cell && cell.isFullyBooked ? 'Fully booked' : ''"
                                                     class="relative flex h-8 w-8 items-center justify-center rounded-lg text-xs transition-colors"
                                                     :class="!cell ? 'invisible' : (
+                                                        cell.isFullyBooked ? (cell.isSelected ? 'bg-rose-600 font-semibold text-white' : 'bg-rose-100 font-semibold text-rose-700 hover:bg-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:hover:bg-rose-900') :
                                                         cell.isSelected ? 'bg-accent-500 font-semibold text-white' :
                                                         !cell.isAvailable ? 'text-ink-300 cursor-not-allowed dark:text-ink-700' :
                                                         cell.isToday ? 'border border-accent-400 text-accent-700 hover:bg-accent-50 dark:text-accent-400' :
@@ -122,17 +124,27 @@
                                     <button
                                         type="button"
                                         @click="selectDate(d.dateStr)"
+                                        :title="d.isFullyBooked ? 'Fully booked' : ''"
                                         class="relative flex flex-col items-center rounded-xl border px-1 py-2.5 transition-colors"
-                                        :class="dateStr === d.dateStr
-                                            ? 'border-accent-500 bg-accent-500 text-white'
-                                            : (d.isToday
-                                                ? 'border-accent-300 bg-white text-ink-700 hover:border-accent-500 dark:border-accent-800 dark:bg-ink-950 dark:text-ink-300'
-                                                : 'border-ink-100 bg-white text-ink-700 hover:border-accent-400 dark:border-ink-800 dark:bg-ink-950 dark:text-ink-300')"
+                                        :class="d.isFullyBooked
+                                            ? (dateStr === d.dateStr
+                                                ? 'border-rose-600 bg-rose-600 text-white'
+                                                : 'border-rose-200 bg-rose-50 text-rose-600 hover:border-rose-400 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400')
+                                            : (dateStr === d.dateStr
+                                                ? 'border-accent-500 bg-accent-500 text-white'
+                                                : (d.isToday
+                                                    ? 'border-accent-300 bg-white text-ink-700 hover:border-accent-500 dark:border-accent-800 dark:bg-ink-950 dark:text-ink-300'
+                                                    : 'border-ink-100 bg-white text-ink-700 hover:border-accent-400 dark:border-ink-800 dark:bg-ink-950 dark:text-ink-300'))"
                                     >
                                         <span x-show="d.isToday" class="absolute -top-2 rounded-full bg-accent-500 px-1.5 py-0.5 text-[9px] font-bold text-white">Today</span>
                                         <span class="text-[10px] font-medium uppercase" x-text="d.weekday"></span>
                                         <span class="font-display text-base font-semibold" x-text="d.day"></span>
                                         <span class="text-[10px]" x-text="d.month"></span>
+                                        <span
+                                            x-show="d.isFullyBooked"
+                                            class="mt-0.5 text-[8px] font-bold tracking-wide uppercase"
+                                            :class="dateStr === d.dateStr ? 'text-white' : 'text-rose-600 dark:text-rose-400'"
+                                        >Fully Booked</span>
                                     </button>
                                 </template>
                             </div>
@@ -167,7 +179,7 @@
                         <p class="mt-4 text-sm text-ink-500 dark:text-ink-400" x-text="error"></p>
                     </template>
 
-                    <template x-if="!loading && !error">
+                    <template x-if="!loading && slots.length > 0">
                         <div class="mt-4 space-y-4">
                             <template x-for="group in groupedSlots" :key="group.key">
                                 <div>
@@ -180,8 +192,14 @@
                                             <button
                                                 type="button"
                                                 @click="pickSlot(item.index)"
+                                                :disabled="item.slot.status !== 'available'"
+                                                :title="item.slot.status === 'booked' ? 'Already booked' : (item.slot.status === 'pending' ? 'Payment pending' : (item.slot.status === 'blocked' ? 'Blocked' : ''))"
                                                 class="rounded-lg border px-2 py-2 text-xs font-medium transition-colors"
-                                                :class="isSelected(item.index) ? 'border-accent-500 bg-accent-500 text-ink-950' : 'border-sky-200 bg-sky-50 text-sky-800 hover:border-accent-400 hover:bg-accent-50 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200'"
+                                                :class="item.slot.status !== 'available'
+                                                    ? 'cursor-not-allowed border-rose-200 bg-rose-50 text-rose-500 line-through dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400'
+                                                    : (isSelected(item.index)
+                                                        ? 'cursor-pointer border-accent-500 bg-accent-500 text-ink-950'
+                                                        : 'cursor-pointer border-sky-200 bg-sky-50 text-sky-800 hover:border-accent-400 hover:bg-accent-50 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200')"
                                                 x-text="slotLabel(item.slot)"
                                             ></button>
                                         </template>

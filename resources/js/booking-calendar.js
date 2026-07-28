@@ -1,6 +1,6 @@
 import { startPolling } from './poll';
 
-export default function bookingCalendar({ courtId, slotsUrl, periodBoundaries, periodEnds, maxBookingHours }) {
+export default function bookingCalendar({ courtId, slotsUrl, fullyBookedUrl, periodBoundaries, periodEnds, maxBookingHours }) {
     const bookingHourCap = maxBookingHours || 24;
     const pad = (n) => String(n).padStart(2, '0');
     const toDateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -52,10 +52,15 @@ export default function bookingCalendar({ courtId, slotsUrl, periodBoundaries, p
     return {
         courtId,
         slotsUrl,
+        fullyBookedUrl,
         viewYear: now.getFullYear(),
         viewMonth: now.getMonth(), // 0-indexed
         selectedDateStr: null,
         slots: [],
+        // Date strings within the currently viewed month where every slot
+        // is already taken - keyed by "YYYY-MM" so switching months doesn't
+        // require refetching one already seen this session.
+        fullyBookedByMonth: {},
         // Picks persist across date switches, keyed by slot id, so a
         // customer can pick times on the 24th, browse to the 25th, and pick
         // more there without losing the 24th's picks - they're building one
@@ -74,7 +79,11 @@ export default function bookingCalendar({ courtId, slotsUrl, periodBoundaries, p
             // from the list (and gets kicked out of the current selection)
             // without needing a manual page refresh. Pauses while the tab is
             // hidden so a backgrounded tab doesn't keep polling for nothing.
-            startPolling(() => this.refreshSlots(), 7000);
+            startPolling(() => {
+                this.refreshSlots();
+                this.loadFullyBookedDates(true);
+            }, 7000);
+            this.loadFullyBookedDates();
         },
 
         get monthLabel() {
@@ -84,10 +93,32 @@ export default function bookingCalendar({ courtId, slotsUrl, periodBoundaries, p
             });
         },
 
+        get monthKey() {
+            return `${this.viewYear}-${pad(this.viewMonth + 1)}`;
+        },
+
+        async loadFullyBookedDates(force = false) {
+            const key = this.monthKey;
+            if (this.fullyBookedByMonth[key] && !force) return;
+
+            try {
+                const res = await fetch(`${this.fullyBookedUrl}?month=${key}`, {
+                    headers: { Accept: 'application/json' },
+                    cache: 'no-store',
+                });
+                if (!res.ok) return;
+                const body = await res.json();
+                this.fullyBookedByMonth[key] = new Set(body.data ?? []);
+            } catch (e) {
+                // Non-critical - the calendar just won't highlight full days this month.
+            }
+        },
+
         get calendarDays() {
             const firstOfMonth = new Date(this.viewYear, this.viewMonth, 1);
             const startOffset = firstOfMonth.getDay(); // 0 = Sunday
             const daysInMonth = new Date(this.viewYear, this.viewMonth + 1, 0).getDate();
+            const fullyBooked = this.fullyBookedByMonth[this.monthKey];
 
             const days = [];
 
@@ -103,6 +134,7 @@ export default function bookingCalendar({ courtId, slotsUrl, periodBoundaries, p
                     dateStr,
                     isPast: dateStr < todayStr,
                     isToday: dateStr === todayStr,
+                    isFullyBooked: !!fullyBooked && fullyBooked.has(dateStr) && dateStr >= todayStr,
                     hasPick: Object.values(this.pickedSlots).some((s) => s.slot_date === dateStr),
                 });
             }
@@ -116,6 +148,7 @@ export default function bookingCalendar({ courtId, slotsUrl, periodBoundaries, p
                 this.viewMonth = 11;
                 this.viewYear -= 1;
             }
+            this.loadFullyBookedDates();
         },
 
         nextMonth() {
@@ -124,6 +157,7 @@ export default function bookingCalendar({ courtId, slotsUrl, periodBoundaries, p
                 this.viewMonth = 0;
                 this.viewYear += 1;
             }
+            this.loadFullyBookedDates();
         },
 
         async selectDate(dateStr, isPast) {
@@ -146,6 +180,8 @@ export default function bookingCalendar({ courtId, slotsUrl, periodBoundaries, p
                 this.slots = slots;
                 if (this.slots.length === 0) {
                     this.error = 'No open slots on this date.';
+                } else if (this.slots.every((s) => s.status !== 'available')) {
+                    this.error = 'Fully booked — no open slots left on this date.';
                 }
             } catch (e) {
                 this.error = 'Could not load availability. Please try again.';
@@ -171,7 +207,12 @@ export default function bookingCalendar({ courtId, slotsUrl, periodBoundaries, p
             const body = await res.json();
             let slots = body.data ?? [];
 
-            // Slots that have already started (or passed entirely) today aren't bookable anymore.
+            // Slots that have already started (or passed entirely) today
+            // aren't bookable anymore, so those are the only ones dropped
+            // outright. Slots someone else already booked/blocked stay in
+            // the list (shown disabled/red below) instead of silently
+            // vanishing, so a customer can see the day is busy rather than
+            // wondering where an hour went.
             if (dateStr === todayStr) {
                 const nowHms = new Date().toTimeString().slice(0, 8);
                 slots = slots.filter((s) => s.start_time > nowHms);
@@ -193,7 +234,7 @@ export default function bookingCalendar({ courtId, slotsUrl, periodBoundaries, p
                 const slots = await this.loadSlots(this.selectedDateStr);
                 if (slots === null) return;
 
-                const stillOpenIds = new Set(slots.map((s) => s.id));
+                const stillOpenIds = new Set(slots.filter((s) => s.status === 'available').map((s) => s.id));
                 const lostIds = Object.values(this.pickedSlots)
                     .filter((s) => s.slot_date === this.selectedDateStr && !stillOpenIds.has(s.id))
                     .map((s) => s.id);
@@ -219,7 +260,7 @@ export default function bookingCalendar({ courtId, slotsUrl, periodBoundaries, p
         pickSlot(index) {
             this.warning = null;
             const slot = this.slots[index];
-            if (!slot) return;
+            if (!slot || slot.status !== 'available') return;
 
             if (this.pickedSlots[slot.id]) {
                 delete this.pickedSlots[slot.id];

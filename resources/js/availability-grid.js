@@ -1,7 +1,7 @@
 import { startPolling } from './poll';
 import { debounce } from './debounce';
 
-export default function availabilityGrid({ availabilityUrl, isAuthenticated, periodBoundaries, periodEnds, maxBookingHours }) {
+export default function availabilityGrid({ availabilityUrl, fullyBookedUrl, isAuthenticated, periodBoundaries, periodEnds, maxBookingHours }) {
     const bookingHourCap = maxBookingHours || 24;
     const pad = (n) => String(n).padStart(2, '0');
     const toDateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -50,8 +50,17 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
         return { key: match, ...periodMeta[match] };
     };
 
+    // Same 60-day span the date strip / calendar popover cover - fetched
+    // once as a single range instead of one request per visible date.
+    const rangeEnd = new Date(today);
+    rangeEnd.setDate(rangeEnd.getDate() + 59);
+    const rangeEndStr = toDateStr(rangeEnd);
+
     return {
         isAuthenticated,
+        // Populated by loadFullyBookedDates() below; dateStrip entries and
+        // calendarWeeks cells read from this set to flag whole days red.
+        fullyBookedDates: new Set(),
         dateStrip: Array.from({ length: 60 }, (_, i) => {
             const d = new Date(today);
             d.setDate(d.getDate() + i);
@@ -61,6 +70,7 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
                 day: d.getDate(),
                 month: d.toLocaleDateString('en-US', { month: 'short' }),
                 isToday: toDateStr(d) === todayStr,
+                isFullyBooked: false,
             };
         }),
         windowStart: 0,
@@ -92,6 +102,7 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
 
         init() {
             this.fetchAvailability();
+            this.loadFullyBookedDates();
 
             // Debounces user-triggered date switches (see selectDate()) so
             // rapidly tapping through several dates fires one request for
@@ -105,13 +116,37 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
             // warning if it was picked out from under this visitor. Pauses
             // while the tab is hidden so a backgrounded tab doesn't keep
             // hitting the server for no one to see.
-            startPolling(() => this.refreshAvailability(), 7000);
+            startPolling(() => {
+                this.refreshAvailability();
+                this.loadFullyBookedDates();
+            }, 7000);
 
             const mq = window.matchMedia('(min-width: 640px)');
             mq.addEventListener('change', (e) => {
                 this.windowSize = e.matches ? 7 : 3;
                 this.windowStart = Math.max(0, Math.min(this.windowStart, this.dateStrip.length - this.windowSize));
             });
+        },
+
+        // Fetches which dates in the visible 60-day span are fully booked
+        // across every active court, then stamps isFullyBooked onto both
+        // the date strip and the calendar popover's cells so both read from
+        // the same source of truth.
+        async loadFullyBookedDates() {
+            try {
+                const res = await fetch(`${fullyBookedUrl}?from=${todayStr}&to=${rangeEndStr}`, {
+                    headers: { Accept: 'application/json' },
+                    cache: 'no-store',
+                });
+                if (!res.ok) return;
+                const body = await res.json();
+                this.fullyBookedDates = new Set(body.data ?? []);
+                this.dateStrip.forEach((d) => {
+                    d.isFullyBooked = this.fullyBookedDates.has(d.dateStr);
+                });
+            } catch (e) {
+                // Non-critical - the strip/calendar just won't highlight full days.
+            }
         },
 
         get selectedDateLabel() {
@@ -178,6 +213,7 @@ export default function availabilityGrid({ availabilityUrl, isAuthenticated, per
                     isToday: dateStr === todayStr,
                     isSelected: dateStr === this.selectedDateStr,
                     isAvailable: validSet.has(dateStr),
+                    isFullyBooked: this.fullyBookedDates.has(dateStr),
                 });
             }
             while (cells.length % 7 !== 0) cells.push(null);

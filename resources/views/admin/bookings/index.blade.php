@@ -67,6 +67,28 @@
     $statusLabel = fn ($booking) => $booking->status === 'pending_payment' && $booking->hasSubmittedPayment()
         ? 'Awaiting Approval'
         : str($booking->status)->replace('_', ' ')->headline();
+
+    // When a booking is confirmed/rejected, this finds the status log entry
+    // that made it so, so the table can show exactly when that happened.
+    $statusAt = fn ($booking) => in_array($booking->status, ['confirmed', 'rejected'], true) && $booking->relationLoaded('statusLogs')
+        ? $booking->statusLogs->sortByDesc('created_at')->firstWhere('to_status', $booking->status)?->created_at
+        : null;
+
+    // Shows the span of dates a session covers, e.g. "Jul 25, 2026 - Jul 30,
+    // 2026" for a multi-day booking, or just "Jul 25, 2026" when it's a
+    // single day.
+    $periodLabel = fn ($booking) => (function () use ($booking) {
+        $dates = $booking->slots->pluck('slot_date')->map(fn ($d) => \Illuminate\Support\Carbon::parse($d));
+        if ($dates->isEmpty()) {
+            return null;
+        }
+        $first = $dates->min();
+        $last = $dates->max();
+
+        return $first->isSameDay($last)
+            ? $first->format('M j, Y')
+            : $first->format('M j, Y').' - '.$last->format('M j, Y');
+    })();
 @endphp
 
 <x-layouts.admin :title="'Bookings'">
@@ -207,6 +229,7 @@
                     <th class="px-4 py-3">Code</th>
                     <th class="px-4 py-3">Customer</th>
                     <th class="px-4 py-3">Court</th>
+                    <th class="px-4 py-3">Period</th>
                     <th class="px-4 py-3">Reference</th>
                     <th class="px-4 py-3">Total</th>
                     <th class="px-4 py-3">Status</th>
@@ -253,6 +276,20 @@
                         </td>
                         <td class="px-4 py-3 text-ink-700 dark:text-ink-300">{{ $booking->court->name }}</td>
                         <td class="px-4 py-3 text-ink-700 dark:text-ink-300">
+                            @if ($isOrder)
+                                @php
+                                    $orderDates = $booking->bookingOrder->bookings->flatMap(fn ($s) => $s->slots->pluck('slot_date'))->map(fn ($d) => \Illuminate\Support\Carbon::parse($d));
+                                @endphp
+                                @if ($orderDates->isNotEmpty())
+                                    {{ $orderDates->min()->format('M j, Y') }} - {{ $orderDates->max()->format('M j, Y') }}
+                                @else
+                                    &mdash;
+                                @endif
+                            @else
+                                {{ $periodLabel($booking) ?? '—' }}
+                            @endif
+                        </td>
+                        <td class="px-4 py-3 text-ink-700 dark:text-ink-300">
                             @if ($booking->gcash_reference)
                                 <span class="inline-flex items-center gap-1 font-mono text-xs text-emerald-700 dark:text-emerald-400">
                                     <i class="ph ph-check-circle text-sm"></i>
@@ -280,6 +317,8 @@
                             </span>
                             @if ($booking->status === 'cancelled')
                                 <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">{{ $booking->cancellationSummary() }}</p>
+                            @elseif ($statusAt($booking))
+                                <p class="mt-1 text-[10px] text-ink-400 dark:text-ink-500">{{ $statusAt($booking)->format('M j, Y g:i A') }}</p>
                             @endif
                         </td>
                         <td class="px-4 py-3" @click.stop>
@@ -384,7 +423,7 @@
                             $canManage = auth()->user()->isAdmin() || auth()->user()->isStaff();
                         @endphp
                         <tr x-show="expandedOrders.includes({{ $booking->bookingOrder->id }})" x-cloak>
-                            <td colspan="7" class="bg-ink-50 px-4 py-3 dark:bg-ink-800/40">
+                            <td colspan="8" class="bg-ink-50 px-4 py-3 dark:bg-ink-800/40">
                                 <div class="flex items-center justify-between">
                                     <p class="text-xs font-semibold tracking-wide text-ink-400 uppercase">Sessions in this order</p>
                                     <a href="{{ route('order.public', $booking->bookingOrder->receipt_token) }}" target="_blank" class="inline-flex items-center gap-1 text-xs font-medium text-accent-700 hover:text-accent-800 dark:text-accent-400">
@@ -465,7 +504,7 @@
                     @endif
                 @empty
                     <tr>
-                        <td colspan="7" class="px-4 py-8 text-center text-sm text-ink-500 dark:text-ink-400">No bookings match these filters.</td>
+                        <td colspan="8" class="px-4 py-8 text-center text-sm text-ink-500 dark:text-ink-400">No bookings match these filters.</td>
                     </tr>
                 @endforelse
             </tbody>

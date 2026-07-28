@@ -87,6 +87,41 @@ class AvailabilityController extends Controller
             ->header('Cache-Control', 'no-store');
     }
 
+    /**
+     * Dates within the given range where every active court's every slot is
+     * already blocked or held by a pending/confirmed booking - lets the
+     * "Choose date" strip and its calendar popover mark whole days red
+     * instead of a customer only discovering it's full after picking it.
+     */
+    public function fullyBookedDates(Request $request)
+    {
+        $request->validate([
+            'from' => ['required', 'date_format:Y-m-d'],
+            'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from'],
+        ]);
+
+        $from = $request->string('from')->toString();
+        $to = $request->string('to')->toString();
+
+        $dates = Cache::store('file')->remember("availability-fully-booked:{$from}:{$to}", 30, function () use ($from, $to) {
+            $courtIds = Court::where('is_active', true)->pluck('id');
+
+            return CourtSlot::whereIn('court_id', $courtIds)
+                ->whereBetween('slot_date', [$from, $to])
+                ->with(['bookings' => fn ($q) => $q->whereIn('status', ['pending_payment', 'confirmed'])])
+                ->get(['id', 'court_id', 'slot_date', 'status'])
+                ->groupBy(fn (CourtSlot $slot) => $slot->slot_date->toDateString())
+                ->filter(fn ($slots) => $slots->every(fn (CourtSlot $slot) => $slot->status === 'blocked' || $slot->bookings->isNotEmpty()))
+                ->keys()
+                ->values()
+                ->all();
+        });
+
+        return response()
+            ->json(['data' => $dates])
+            ->header('Cache-Control', 'no-store');
+    }
+
     protected function displayStatus(CourtSlot $slot): string
     {
         if ($slot->status === 'blocked') {
