@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\InvalidBookingTransitionException;
 use App\Exceptions\NonContiguousSlotsException;
 use App\Exceptions\SlotUnavailableException;
+use App\Mail\BookingAwaitingApprovalMail;
 use App\Mail\BookingConfirmedMail;
 use App\Mail\BookingRejectedMail;
 use App\Models\Booking;
@@ -106,6 +107,28 @@ class BookingService
         return $booking;
     }
 
+    /**
+     * Who to remind when a customer submits payment proof - a booking sits
+     * in "awaiting approval" from this moment until an admin acts on it, so
+     * these are the addresses that get nudged, separately from whichever
+     * customer email confirms/rejects later.
+     *
+     * Only the real production domain notifies the actual admins - every
+     * other environment (local, staging, a preview URL) routes to a single
+     * debug inbox instead, so testing this flow never spams the live admins.
+     */
+    protected function adminNotifyEmails(): array
+    {
+        if (! str_contains(config('app.url'), 'paddleground.net')) {
+            return ['boltdebug@gmail.com'];
+        }
+
+        return [
+            'suannalisa@gmail.com',
+            'brianne022887@gmail.com',
+        ];
+    }
+
     public function submitGcashReference(Booking $booking, ?string $reference, ?string $proofPath = null, ?int $paymentMethodId = null): Booking
     {
         if ($booking->status !== 'pending_payment') {
@@ -119,7 +142,18 @@ class BookingService
             'gcash_submitted_at' => now(),
         ]);
 
-        return $booking->fresh();
+        $booking = $booking->fresh();
+
+        $this->sendAwaitingApprovalNotice($booking);
+
+        return $booking;
+    }
+
+    protected function sendAwaitingApprovalNotice(Booking $booking): void
+    {
+        foreach ($this->adminNotifyEmails() as $adminEmail) {
+            $this->sendAndLogEmail($adminEmail, "Booking {$booking->booking_code} is awaiting approval.", new BookingAwaitingApprovalMail($booking));
+        }
     }
 
     public function approve(Booking $booking, User $admin, string $note = 'Payment approved'): Booking
