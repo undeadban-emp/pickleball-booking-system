@@ -156,10 +156,10 @@
                     @if ($__facebookUrl)
                         <a href="{{ $__facebookUrl }}" style="text-decoration:none;margin-left:8px;"><img src="https://cdn-icons-png.flaticon.com/24/733/733547.png" width="20" alt="FB"></a>
                     @endif
-                    <a href="https://instagram.com" style="text-decoration:none;margin-left:8px;"><img src="https://cdn-icons-png.flaticon.com/24/2111/2111463.png" width="20" alt="IG"></a>
+                    {{-- <a href="https://instagram.com" style="text-decoration:none;margin-left:8px;"><img src="https://cdn-icons-png.flaticon.com/24/2111/2111463.png" width="20" alt="IG"></a>
                     <a href="https://twitter.com" style="text-decoration:none;margin-left:8px;"><img src="https://cdn-icons-png.flaticon.com/24/733/733579.png" width="20" alt="X"></a>
                     <a href="https://tiktok.com" style="text-decoration:none;margin-left:8px;"><img src="https://cdn-icons-png.flaticon.com/24/3046/3046121.png" width="20" alt="TT"></a>
-                    <a href="https://youtube.com" style="text-decoration:none;margin-left:8px;"><img src="https://cdn-icons-png.flaticon.com/24/1384/1384060.png" width="20" alt="YT"></a>
+                    <a href="https://youtube.com" style="text-decoration:none;margin-left:8px;"><img src="https://cdn-icons-png.flaticon.com/24/1384/1384060.png" width="20" alt="YT"></a> --}}
                 </td>
             </tr>
         </table>
