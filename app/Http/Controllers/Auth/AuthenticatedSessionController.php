@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Traits\ResumesPendingBooking;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -10,6 +11,8 @@ use Illuminate\Validation\ValidationException;
 
 class AuthenticatedSessionController extends Controller
 {
+    use ResumesPendingBooking;
+
     public function create()
     {
         return view('auth.login');
@@ -30,7 +33,8 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended($this->redirectPathFor(Auth::user()->role));
+        return $this->resumePendingBooking()
+            ?? redirect()->intended($this->redirectPathFor(Auth::user()->role));
     }
 
     public function destroy(Request $request): RedirectResponse

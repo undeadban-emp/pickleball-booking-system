@@ -17,32 +17,25 @@ class QuickBookController extends Controller
 
     public function store(Request $request)
     {
-        $rules = [
+        $data = $request->validate([
             'court_id' => ['required', 'integer', 'exists:courts,id'],
             'court_slot_ids' => ['required', 'array', 'min:1', 'max:'.(OperatingHours::current()->max_customer_booking_hours ?? 24)],
             'court_slot_ids.*' => ['integer', 'distinct', 'exists:court_slots,id'],
-        ];
-
-        if (! Auth::check()) {
-            $rules['guest_name'] = ['required', 'string', 'max:120'];
-            $rules['guest_phone'] = ['required', 'string', 'regex:/^(09\d{9}|\+639\d{9})$/'];
-            $rules['guest_email'] = ['required', 'email', 'max:150'];
-        }
-
-        $data = $request->validate($rules, [
-            'guest_phone.regex' => 'Enter a valid PH mobile number, e.g. 09171234567 or +639171234567.',
         ]);
 
         $court = Court::findOrFail($data['court_id']);
 
-        $guest = Auth::check() ? null : [
-            'name' => $data['guest_name'],
-            'phone' => $data['guest_phone'],
-            'email' => $data['guest_email'] ?? null,
-        ];
+        if (! Auth::check()) {
+            session(['pending_booking' => [
+                'court_id' => $court->id,
+                'court_slot_ids' => $data['court_slot_ids'],
+            ]]);
+
+            return redirect()->route('login')->with('status', 'Please log in or create an account to complete your booking.');
+        }
 
         try {
-            $result = $this->checkout->checkout(Auth::user(), $court, $data['court_slot_ids'], $guest);
+            $result = $this->checkout->checkout(Auth::user(), $court, $data['court_slot_ids']);
         } catch (NonContiguousSlotsException $e) {
             return back()->withErrors(['court_slot_ids' => $e->getMessage()])->withInput();
         } catch (SlotUnavailableException $e) {

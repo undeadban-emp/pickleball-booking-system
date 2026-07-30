@@ -336,49 +336,14 @@
                             </div>
 
                             <template x-if="!isAuthenticated">
-                                <div class="mt-5">
-                                    <p class="text-sm font-semibold text-ink-950 dark:text-white">Your details</p>
-
-                                    <div class="mt-3 flex flex-col gap-3">
-                                        <div class="flex flex-col gap-1.5">
-                                            <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Full name</label>
-                                            <input
-                                                name="guest_name"
-                                                type="text"
-                                                required
-                                                placeholder="Juan Dela Cruz"
-                                                value="{{ old('guest_name') }}"
-                                                class="w-full rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm text-ink-950 placeholder:text-ink-400 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-white"
-                                            >
-                                        </div>
-
-                                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                            <div class="flex flex-col gap-1.5">
-                                                <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Phone</label>
-                                                <input
-                                                    name="guest_phone"
-                                                    type="tel"
-                                                    required
-                                                    pattern="^(09\d{9}|\+639\d{9})$"
-                                                    title="Enter a valid PH mobile number, e.g. 09171234567 or +639171234567"
-                                                    placeholder="09XX-XXX-XXXX"
-                                                    value="{{ old('guest_phone') }}"
-                                                    class="w-full rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm text-ink-950 placeholder:text-ink-400 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-white"
-                                                >
-                                            </div>
-                                            <div class="flex flex-col gap-1.5">
-                                                <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Email</label>
-                                                <input
-                                                    name="guest_email"
-                                                    type="email"
-                                                    required
-                                                    placeholder="you@email.com"
-                                                    value="{{ old('guest_email') }}"
-                                                    class="w-full rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm text-ink-950 placeholder:text-ink-400 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-white"
-                                                >
-                                            </div>
-                                        </div>
-                                    </div>
+                                <div class="mt-5 rounded-xl border border-accent-200 bg-accent-50 px-4 py-3 dark:border-accent-800 dark:bg-accent-950">
+                                    <p class="text-sm font-semibold text-ink-950 dark:text-white">You'll need an account to book</p>
+                                    <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">
+                                        <a href="{{ route('login') }}" class="font-medium text-accent-700 underline hover:text-accent-600 dark:text-accent-400">Log in</a>
+                                        or
+                                        <a href="{{ route('register') }}" class="font-medium text-accent-700 underline hover:text-accent-600 dark:text-accent-400">create an account</a>
+                                        to complete this booking. Your selection will be kept.
+                                    </p>
                                 </div>
                             </template>
 
@@ -393,10 +358,6 @@
                             <button type="button" @click="clearSelection()" class="mt-2 w-full text-center text-xs font-medium text-ink-500 hover:text-ink-700 dark:text-ink-400">
                                 Clear selection
                             </button>
-
-                            <template x-if="!isAuthenticated">
-                                <p class="mt-3 text-center text-xs text-ink-400">No account needed. You'll receive a reference number to track your booking.</p>
-                            </template>
                         </form>
                     </div>
                 </div>

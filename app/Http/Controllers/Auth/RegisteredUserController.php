@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Traits\ResumesPendingBooking;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -13,6 +14,8 @@ use Illuminate\Validation\Rules\Password;
 
 class RegisteredUserController extends Controller
 {
+    use ResumesPendingBooking;
+
     public function create()
     {
         return view('auth.register');
@@ -43,6 +46,7 @@ class RegisteredUserController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect('/')->with('status', 'Welcome to Kitchen Line! Your account is ready.');
+        return $this->resumePendingBooking()
+            ?? redirect('/')->with('status', 'Welcome to Kitchen Line! Your account is ready.');
     }
 }
