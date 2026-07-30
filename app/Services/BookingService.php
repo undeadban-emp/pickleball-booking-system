@@ -992,6 +992,7 @@ class BookingService
             'to_status' => $to,
             'changed_by' => $actor?->id,
             'note' => $note,
+            'created_at' => now(),
         ]);
     }
 
