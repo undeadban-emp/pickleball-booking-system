@@ -119,9 +119,9 @@ class BookingService
      */
     protected function adminNotifyEmails(): array
     {
-        if (! str_contains(config('app.url'), 'paddleground.net')) {
-            return ['boltdebug@gmail.com'];
-        }
+        // if (! str_contains(config('app.url'), 'paddleground.net')) {
+        //     return ['boltdebug@gmail.com'];
+        // }
 
         return [
             'suannalisa@gmail.com',
