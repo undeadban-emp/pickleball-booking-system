@@ -4,36 +4,41 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
-use App\Models\BookingHold;
 use App\Models\CourtSlot;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 class RevenueReportController extends Controller
 {
     /**
-     * Same figures as the web "Revenue & Finance Reports" page
+     * The five buckets this whole report is built around. Every other
+     * status ('no_show', legacy rows, etc.) is deliberately left out - this
+     * mirrors the web "Revenue & Finance Reports" page
      * (Admin\RevenueReportController).
      */
+    protected const BUCKETS = ['confirmed', 'pending', 'hold', 'rejected', 'cancelled'];
+
     public function index(Request $request)
     {
         [$from, $to] = $this->resolveRange($request);
+        $courtId = $this->resolveCourtId($request);
+        $bookingType = $this->resolveBookingType($request);
+        $status = $this->resolveStatusFilter($request);
 
-        $trend = $this->trend($from, $to);
+        $bookings = $this->loadBookings($from, $to, $courtId, $bookingType, $status);
 
         return response()->json([
             'data' => [
                 'from' => $from->toDateString(),
                 'to' => $to->toDateString(),
-                'total_revenue' => $trend->sum('total'),
-                'total_bookings' => (int) $trend->sum('count'),
-                'trend' => $trend,
-                'by_court' => $this->byCourt($from, $to),
-                'by_payment_method' => $this->byPaymentMethod($from, $to),
-                'by_source' => $this->bySource($from, $to),
-                'pending_aging' => $this->pendingAging(),
-                'hold_revenue' => $this->holdRevenue(),
-                'lost' => $this->lostRevenue($from, $to),
+                'court_id' => $courtId,
+                'booking_type' => $bookingType,
+                'status' => $status,
+                'summary' => $this->summarize($bookings),
+                'daily' => $this->dailyBreakdown($bookings)->map(fn ($row, $date) => $row + ['date' => $date])->values(),
+                'by_court' => $this->byCourt($bookings),
+                'by_booking_type' => $this->byBookingType($bookings),
             ],
         ]);
     }
@@ -63,133 +68,159 @@ class RevenueReportController extends Controller
         }
     }
 
-    protected function salesInRange(Carbon $from, Carbon $to)
+    protected function resolveCourtId(Request $request): ?int
     {
-        return Booking::sales()->whereBetween('payment_reviewed_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()]);
+        return $request->filled('court_id') ? $request->integer('court_id') : null;
     }
 
-    protected function trend(Carbon $from, Carbon $to)
+    protected function resolveBookingType(Request $request): ?string
     {
-        return $this->salesInRange($from, $to)
-            ->selectRaw('DATE(payment_reviewed_at) as d, SUM(total_price) as total, COUNT(*) as count')
-            ->groupBy('d')
-            ->orderBy('d')
-            ->get();
+        $value = $request->string('booking_type')->toString();
+
+        return in_array($value, ['online', 'walk_in'], true) ? $value : null;
     }
 
-    protected function byCourt(Carbon $from, Carbon $to)
+    protected function resolveStatusFilter(Request $request): ?string
     {
-        return $this->salesInRange($from, $to)
-            ->join('courts', 'courts.id', '=', 'bookings.court_id')
-            ->selectRaw('courts.name as court_name, SUM(bookings.total_price) as total, COUNT(*) as count')
-            ->groupBy('courts.name')
-            ->orderByDesc('total')
-            ->get();
-    }
+        $value = $request->string('status')->toString();
 
-    protected function byPaymentMethod(Carbon $from, Carbon $to)
-    {
-        return $this->salesInRange($from, $to)
-            ->leftJoin('payment_methods', 'payment_methods.id', '=', 'bookings.payment_method_id')
-            ->selectRaw("COALESCE(payment_methods.name, 'Cash / Unspecified') as method_name, SUM(bookings.total_price) as total, COUNT(*) as count")
-            ->groupBy('method_name')
-            ->orderByDesc('total')
-            ->get();
-    }
-
-    protected function bySource(Carbon $from, Carbon $to): array
-    {
-        $bookings = $this->salesInRange($from, $to)
-            ->with('statusLogs.changedBy:id,role')
-            ->get(['bookings.id', 'bookings.total_price']);
-
-        $groups = $bookings->groupBy(function (Booking $booking) {
-            $firstLog = $booking->statusLogs->sortBy('created_at')->first();
-            $actor = $firstLog?->changedBy;
-
-            return ($actor && $actor->role !== 'customer') ? 'Front Desk' : 'Online';
-        });
-
-        return $groups->map(fn ($g, $label) => [
-            'label' => $label,
-            'count' => $g->count(),
-            'total' => $g->sum('total_price'),
-        ])->values()->all();
-    }
-
-    protected function pendingAging()
-    {
-        $pending = Booking::where('status', 'pending_payment')->get(['id', 'total_price', 'created_at']);
-
-        $buckets = [
-            '0-1 days' => fn ($days) => $days <= 1,
-            '2-3 days' => fn ($days) => $days >= 2 && $days <= 3,
-            '4-7 days' => fn ($days) => $days >= 4 && $days <= 7,
-            '8+ days' => fn ($days) => $days >= 8,
-        ];
-
-        return collect($buckets)->map(function ($matches) use ($pending) {
-            $matching = $pending->filter(fn (Booking $b) => $matches($b->created_at->diffInDays(now())));
-
-            return ['count' => $matching->count(), 'total' => $matching->sum('total_price')];
-        });
+        return in_array($value, ['confirmed', 'hold', 'rejected', 'cancelled'], true) ? $value : null;
     }
 
     /**
-     * Bookings currently sitting on_hold, right now - a live snapshot like
-     * pendingAging(), not a date-range figure. BookingHold doesn't store a
-     * price snapshot (holdSlots() zeroes the booking's total_price), so the
-     * value is reconstructed from the CourtSlot price(s) that originally
-     * covered the held range.
+     * Which of the five report buckets a raw booking status belongs to.
+     * 'completed' (checked-in) is folded into "confirmed" - it's still a
+     * paid, honored booking. Anything else ('no_show', legacy rows) is
+     * excluded from the report entirely.
      */
-    protected function holdRevenue(): array
+    protected function bucketFor(string $status): ?string
     {
-        $activeHolds = BookingHold::whereNull('resolved_at')->get();
-
-        $withValue = $activeHolds->map(function (BookingHold $hold) {
-            $value = CourtSlot::where('court_id', $hold->from_court_id)
-                ->where('slot_date', $hold->from_slot_date)
-                ->where('start_time', '>=', $hold->from_start_time)
-                ->where('start_time', '<', $hold->from_end_time)
-                ->sum('price');
-
-            return ['value' => $value, 'reason' => $hold->reason ?: 'Not specified'];
-        });
-
-        $byReason = $withValue->groupBy('reason')
-            ->map(fn ($g) => ['count' => $g->count(), 'total' => $g->sum('value')])
-            ->sortByDesc('total');
-
-        return [
-            'count' => $withValue->count(),
-            'total' => $withValue->sum('value'),
-            'by_reason' => $byReason,
-        ];
+        return match (true) {
+            in_array($status, ['confirmed', 'completed'], true) => 'confirmed',
+            $status === 'pending_payment' => 'pending',
+            $status === 'on_hold' => 'hold',
+            $status === 'rejected' => 'rejected',
+            $status === 'cancelled' => 'cancelled',
+            default => null,
+        };
     }
 
-    protected function lostRevenue(Carbon $from, Carbon $to): array
+    protected function loadBookings(Carbon $from, Carbon $to, ?int $courtId, ?string $bookingType, ?string $status): Collection
     {
-        $rejected = Booking::where('status', 'rejected')
-            ->whereBetween('payment_reviewed_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
-            ->get(['total_price', 'rejection_reason']);
+        return Booking::query()
+            ->whereNull('rescheduled_from_id')
+            ->whereBetween('created_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
+            ->when($courtId, fn ($q) => $q->where('court_id', $courtId))
+            ->when($bookingType === 'online', fn ($q) => $q->where('created_by_admin', false))
+            ->when($bookingType === 'walk_in', fn ($q) => $q->where('created_by_admin', true))
+            ->when($status === 'confirmed', fn ($q) => $q->whereIn('status', ['confirmed', 'completed']))
+            ->when($status === 'hold', fn ($q) => $q->where('status', 'on_hold'))
+            ->when($status === 'rejected', fn ($q) => $q->where('status', 'rejected'))
+            ->when($status === 'cancelled', fn ($q) => $q->where('status', 'cancelled'))
+            ->with(['court:id,name', 'holds' => fn ($q) => $q->whereNull('resolved_at')])
+            ->get(['id', 'court_id', 'status', 'total_price', 'created_by_admin', 'created_at']);
+    }
 
-        $cancelled = Booking::where('status', 'cancelled')
-            ->whereDoesntHave('rescheduledTo')
-            ->whereBetween('cancelled_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
-            ->get(['total_price', 'cancellation_reason']);
+    /**
+     * A booking's own total_price is zeroed out the moment it's put on
+     * hold (see BookingService::holdSlots()), so its value has to be
+     * reconstructed from the CourtSlot price(s) that originally covered
+     * the range its active hold is sitting on.
+     */
+    protected function bookingValue(Booking $booking): float
+    {
+        if ($booking->status !== 'on_hold') {
+            return (float) $booking->total_price;
+        }
 
-        $byReason = $rejected->map(fn ($b) => ['reason' => $b->rejection_reason ?? 'Not specified', 'total' => $b->total_price])
-            ->merge($cancelled->map(fn ($b) => ['reason' => $b->cancellation_reason ?? 'Not specified', 'total' => $b->total_price]))
-            ->groupBy('reason')
-            ->map(fn ($g) => ['count' => $g->count(), 'total' => $g->sum('total')])
-            ->sortByDesc('total');
+        $hold = $booking->holds->first();
 
-        return [
-            'rejected_total' => $rejected->sum('total_price'),
-            'rejected_count' => $rejected->count(),
-            'cancelled_total' => $cancelled->sum('total_price'),
-            'cancelled_count' => $cancelled->count(),
-            'by_reason' => $byReason,
-        ];
+        if (! $hold) {
+            return 0.0;
+        }
+
+        return (float) CourtSlot::where('court_id', $hold->from_court_id)
+            ->where('slot_date', $hold->from_slot_date)
+            ->where('start_time', '>=', $hold->from_start_time)
+            ->where('start_time', '<', $hold->from_end_time)
+            ->sum('price');
+    }
+
+    protected function emptyBuckets(): array
+    {
+        return array_fill_keys(self::BUCKETS, ['count' => 0, 'total' => 0.0]);
+    }
+
+    protected function summarize(Collection $bookings): array
+    {
+        $buckets = $this->emptyBuckets();
+
+        foreach ($bookings as $booking) {
+            $key = $this->bucketFor($booking->status);
+
+            if ($key === null) {
+                continue;
+            }
+
+            $buckets[$key]['count']++;
+            $buckets[$key]['total'] += $this->bookingValue($booking);
+        }
+
+        return $buckets;
+    }
+
+    protected function dailyBreakdown(Collection $bookings): Collection
+    {
+        return $bookings
+            ->groupBy(fn (Booking $b) => $b->created_at->toDateString())
+            ->map(function (Collection $dayBookings) {
+                $buckets = $this->emptyBuckets();
+
+                foreach ($dayBookings as $booking) {
+                    $key = $this->bucketFor($booking->status);
+
+                    if ($key === null) {
+                        continue;
+                    }
+
+                    $buckets[$key]['count']++;
+                    $buckets[$key]['total'] += $this->bookingValue($booking);
+                }
+
+                return $buckets;
+            })
+            ->sortKeys();
+    }
+
+    /**
+     * Realized revenue only (confirmed/completed) - matches what "Revenue"
+     * has always meant on this page, just now filterable by court/booking
+     * type/status like the rest of the report.
+     */
+    protected function byCourt(Collection $bookings): Collection
+    {
+        return $bookings
+            ->filter(fn (Booking $b) => $this->bucketFor($b->status) === 'confirmed')
+            ->groupBy('court_id')
+            ->map(fn (Collection $group) => [
+                'label' => $group->first()->court->name ?? 'Unknown court',
+                'count' => $group->count(),
+                'total' => $group->sum(fn (Booking $b) => $this->bookingValue($b)),
+            ])
+            ->sortByDesc('total')
+            ->values();
+    }
+
+    protected function byBookingType(Collection $bookings): Collection
+    {
+        return $bookings
+            ->filter(fn (Booking $b) => $this->bucketFor($b->status) === 'confirmed')
+            ->groupBy(fn (Booking $b) => $b->created_by_admin ? 'Walk-in' : 'Online')
+            ->map(fn (Collection $group, string $label) => [
+                'label' => $label,
+                'count' => $group->count(),
+                'total' => $group->sum(fn (Booking $b) => $this->bookingValue($b)),
+            ])
+            ->values();
     }
 }

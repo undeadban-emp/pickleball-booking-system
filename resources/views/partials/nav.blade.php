@@ -18,7 +18,7 @@
         <div class="flex items-center gap-2 sm:gap-4 md:gap-5">
             <a href="{{ url('/') }}" class="hidden text-sm font-medium text-ink-600 transition-colors hover:text-ink-950 md:order-1 md:inline dark:text-ink-300 dark:hover:text-white">Home</a>
             @auth
-                <a href="{{ route('open-play.index') }}" class="hidden text-sm font-medium text-ink-600 transition-colors hover:text-ink-950 md:order-2 md:inline dark:text-ink-300 dark:hover:text-white">Open Play</a>
+                {{-- <a href="{{ route('open-play.index') }}" class="hidden text-sm font-medium text-ink-600 transition-colors hover:text-ink-950 md:order-2 md:inline dark:text-ink-300 dark:hover:text-white">Open Play</a> --}}
             @endauth
 
             @guest

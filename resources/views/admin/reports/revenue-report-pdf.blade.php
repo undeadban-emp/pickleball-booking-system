@@ -228,52 +228,64 @@
     <table class="kpi-table">
         <tr>
             <td class="kpi-box">
-                <p class="kpi-label">Total Revenue</p>
-                <p class="kpi-value positive">₱{{ number_format($totalRevenue, 2) }}</p>
-                <p class="kpi-sub">Confirmed &amp; completed bookings only</p>
+                <p class="kpi-label">Confirmed Revenue</p>
+                <p class="kpi-value positive">₱{{ number_format($summary['confirmed']['total'], 2) }}</p>
+                <p class="kpi-sub">{{ $summary['confirmed']['count'] }} booking{{ $summary['confirmed']['count'] === 1 ? '' : 's' }}</p>
             </td>
             <td class="kpi-box">
-                <p class="kpi-label">Paid Bookings</p>
-                <p class="kpi-value">{{ number_format($totalBookings) }}</p>
-                <p class="kpi-sub">In selected range</p>
+                <p class="kpi-label">Pending</p>
+                <p class="kpi-value">₱{{ number_format($summary['pending']['total'], 2) }}</p>
+                <p class="kpi-sub">{{ $summary['pending']['count'] }} booking{{ $summary['pending']['count'] === 1 ? '' : 's' }}</p>
             </td>
             <td class="kpi-box">
-                <p class="kpi-label">Avg. per Booking</p>
-                <p class="kpi-value">₱{{ number_format($avgPerBooking, 2) }}</p>
-                <p class="kpi-sub">Revenue ÷ paid bookings</p>
+                <p class="kpi-label">Hold</p>
+                <p class="kpi-value">₱{{ number_format($summary['hold']['total'], 2) }}</p>
+                <p class="kpi-sub">{{ $summary['hold']['count'] }} booking{{ $summary['hold']['count'] === 1 ? '' : 's' }}</p>
+            </td>
+        </tr>
+    </table>
+
+    <table class="lost-box">
+        <tr>
+            <td class="lost-cell">
+                <p class="kpi-label">Rejected</p>
+                <p class="kpi-value">₱{{ number_format($summary['rejected']['total'], 2) }}</p>
+                <p class="kpi-sub">{{ $summary['rejected']['count'] }} booking{{ $summary['rejected']['count'] === 1 ? '' : 's' }}</p>
+            </td>
+            <td class="lost-cell">
+                <p class="kpi-label">Cancelled</p>
+                <p class="kpi-value">₱{{ number_format($summary['cancelled']['total'], 2) }}</p>
+                <p class="kpi-sub">{{ $summary['cancelled']['count'] }} booking{{ $summary['cancelled']['count'] === 1 ? '' : 's' }}</p>
             </td>
         </tr>
     </table>
 
     <div class="section">
         <p class="section-title">Daily Revenue</p>
-        @if ($trend->isEmpty())
-            <p class="empty-note">No confirmed sales in this range.</p>
+        @if ($daily->isEmpty())
+            <p class="empty-note">No bookings in this range.</p>
         @else
             <table class="data">
                 <thead>
                     <tr>
                         <th>Date</th>
-                        <th class="num">Bookings</th>
-                        <th class="num">Revenue</th>
+                        <th class="num">Confirmed</th>
+                        <th class="num">Pending</th>
+                        <th class="num">Hold</th>
+                        <th class="num">Rejected</th>
+                        <th class="num">Cancelled</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach ($trend as $day)
+                    @foreach ($daily as $date => $row)
                         <tr>
-                            <td>{{ \Illuminate\Support\Carbon::parse($day->d)->format('D, M j, Y') }}</td>
-                            <td class="num">{{ $day->count }}</td>
-                            <td class="num">₱{{ number_format($day->total, 2) }}</td>
+                            <td>{{ \Illuminate\Support\Carbon::parse($date)->format('M j, Y') }}</td>
+                            @foreach (['confirmed', 'pending', 'hold', 'rejected', 'cancelled'] as $__key)
+                                <td class="num">{{ $row[$__key]['count'] }} bkg — ₱{{ number_format($row[$__key]['total'], 2) }}</td>
+                            @endforeach
                         </tr>
                     @endforeach
                 </tbody>
-                <tfoot>
-                    <tr>
-                        <td>Total</td>
-                        <td class="num">{{ $totalBookings }}</td>
-                        <td class="num">₱{{ number_format($totalRevenue, 2) }}</td>
-                    </tr>
-                </tfoot>
             </table>
         @endif
     </div>
@@ -292,53 +304,6 @@
                         <tbody>
                             @foreach ($byCourt as $row)
                                 <tr>
-                                    <td>{{ $row->court_name }}</td>
-                                    <td class="num">{{ $row->count }}</td>
-                                    <td class="num">₱{{ number_format($row->total, 2) }}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                @endif
-            </td>
-            <td>
-                <div class="section-title">Revenue by Payment Method</div>
-                @if ($byPaymentMethod->isEmpty())
-                    <p class="empty-note">No data.</p>
-                @else
-                    <table class="data">
-                        <thead>
-                            <tr><th>Method</th><th class="num">Bkg</th><th class="num">Revenue</th></tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($byPaymentMethod as $row)
-                                <tr>
-                                    <td>{{ $row->method_name }}</td>
-                                    <td class="num">{{ $row->count }}</td>
-                                    <td class="num">₱{{ number_format($row->total, 2) }}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                @endif
-            </td>
-        </tr>
-    </table>
-
-    <table class="two-col">
-        <tr>
-            <td>
-                <div class="section-title">Revenue by Source</div>
-                @if (empty($bySource))
-                    <p class="empty-note">No data.</p>
-                @else
-                    <table class="data">
-                        <thead>
-                            <tr><th>Source</th><th class="num">Bkg</th><th class="num">Revenue</th></tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($bySource as $row)
-                                <tr>
                                     <td>{{ $row['label'] }}</td>
                                     <td class="num">{{ $row['count'] }}</td>
                                     <td class="num">₱{{ number_format($row['total'], 2) }}</td>
@@ -349,89 +314,28 @@
                 @endif
             </td>
             <td>
-                <div class="section-title">Outstanding Payments (as of today)</div>
-                <table class="data">
-                    <thead>
-                        <tr><th>Age</th><th class="num">Bkg</th><th class="num">Total</th></tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($pendingAging as $bucket => $data)
-                            <tr>
-                                <td>{{ $bucket }}</td>
-                                <td class="num">{{ $data['count'] }}</td>
-                                <td class="num">₱{{ number_format($data['total'], 2) }}</td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
+                <div class="section-title">Revenue by Booking Type</div>
+                @if ($byBookingType->isEmpty())
+                    <p class="empty-note">No data.</p>
+                @else
+                    <table class="data">
+                        <thead>
+                            <tr><th>Type</th><th class="num">Bkg</th><th class="num">Revenue</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($byBookingType as $row)
+                                <tr>
+                                    <td>{{ $row['label'] }}</td>
+                                    <td class="num">{{ $row['count'] }}</td>
+                                    <td class="num">₱{{ number_format($row['total'], 2) }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @endif
             </td>
         </tr>
     </table>
-
-    <div class="section">
-        <p class="section-title">Hold Revenue (HOLD)</p>
-        <table class="lost-box">
-            <tr>
-                <td class="lost-cell">
-                    <p class="kpi-label">Currently on hold (as of today)</p>
-                    <p class="kpi-value">₱{{ number_format($holdRevenue['total'], 2) }}</p>
-                    <p class="kpi-sub">{{ $holdRevenue['count'] }} booking{{ $holdRevenue['count'] === 1 ? '' : 's' }}</p>
-                </td>
-            </tr>
-        </table>
-
-        @if ($holdRevenue['byReason']->isNotEmpty())
-            <table class="data">
-                <thead>
-                    <tr><th>Reason</th><th class="num">Bkg</th><th class="num">Total</th></tr>
-                </thead>
-                <tbody>
-                    @foreach ($holdRevenue['byReason'] as $reason => $data)
-                        <tr>
-                            <td>{{ $reason }}</td>
-                            <td class="num">{{ $data['count'] }}</td>
-                            <td class="num">₱{{ number_format($data['total'], 2) }}</td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
-        @endif
-    </div>
-
-    <div class="section">
-        <p class="section-title">Lost Revenue (Rejected &amp; Cancelled)</p>
-        <table class="lost-box">
-            <tr>
-                <td class="lost-cell">
-                    <p class="kpi-label">Rejected</p>
-                    <p class="kpi-value">₱{{ number_format($lost['rejectedTotal'], 2) }}</p>
-                    <p class="kpi-sub">{{ $lost['rejectedCount'] }} booking{{ $lost['rejectedCount'] === 1 ? '' : 's' }}</p>
-                </td>
-                <td class="lost-cell">
-                    <p class="kpi-label">Cancelled (not rebooked)</p>
-                    <p class="kpi-value">₱{{ number_format($lost['cancelledTotal'], 2) }}</p>
-                    <p class="kpi-sub">{{ $lost['cancelledCount'] }} booking{{ $lost['cancelledCount'] === 1 ? '' : 's' }}</p>
-                </td>
-            </tr>
-        </table>
-
-        @if ($lost['byReason']->isNotEmpty())
-            <table class="data">
-                <thead>
-                    <tr><th>Reason</th><th class="num">Bkg</th><th class="num">Total</th></tr>
-                </thead>
-                <tbody>
-                    @foreach ($lost['byReason'] as $reason => $data)
-                        <tr>
-                            <td>{{ $reason }}</td>
-                            <td class="num">{{ $data['count'] }}</td>
-                            <td class="num">₱{{ number_format($data['total'], 2) }}</td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
-        @endif
-    </div>
 
     <table class="signoff">
         <tr>
@@ -440,6 +344,6 @@
         </tr>
     </table>
 
-    <p class="doc-footer">Generated by the admin revenue &amp; finance reports panel. Figures reflect confirmed/completed bookings only.</p>
+    <p class="doc-footer">Generated by the admin revenue &amp; finance reports panel. "Revenue by Court" and "Revenue by Booking Type" reflect confirmed/completed bookings only.</p>
 </body>
 </html>
