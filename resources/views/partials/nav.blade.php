@@ -11,7 +11,7 @@
                 <x-logo-mark />
             @endif
             @if ($__brandSettings->show_brand_text)
-                <span class="text-base tracking-tight sm:text-lg" style="font-family: 'Alfa Slab One', sans-serif;">{{ $__brandSettings->brand_text }}</span>
+                <span class="text-xs tracking-tight sm:text-lg" style="font-family: 'Alfa Slab One', sans-serif;">{{ $__brandSettings->brand_text }}</span>
             @endif
         </a>
 
