@@ -74,9 +74,9 @@
                     </span>
                 @endif
 
-                <h1 class="mt-4 font-display text-4xl font-semibold tracking-tight text-white md:text-5xl lg:text-6xl">
+                <h1 class="mt-4 tracking-tight text-white">
                     {{-- {{ $__brand->show_brand_text ? $__brand->brand_text : '' }}<br> --}}
-                    <span class="text-accent-400">{{ $__brand->show_brand_text ? $__brand->brand_text : '' }}</span>
+                    <span class="text-accent-400" style="font-family: 'Alfa Slab One', sans-serif; font-size: clamp(30px, 8vw, 34px); line-height: 1.3; word-break: break-word;">{{ $__brand->show_brand_text ? $__brand->brand_text : '' }}</span>
                 </h1>
                 <p class="mt-5 max-w-md text-base leading-relaxed text-ink-300">
                     Paddle&rsquo;s hot. Hit the ground.
