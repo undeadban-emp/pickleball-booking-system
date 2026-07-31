@@ -14,8 +14,8 @@
             <h1 class="font-display text-3xl font-semibold tracking-tight text-ink-950 dark:text-white">
                 My bookings
             </h1>
-            <a href="{{ route('book.index') }}" class="inline-flex items-center gap-1.5 rounded-full bg-accent-500 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-400">
-                <i class="ph ph-plus text-base"></i>
+            <a href="{{ route('book.index') }}" class="inline-flex items-center gap-2 rounded-full bg-accent-500 px-6 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.98] hover:bg-accent-400">
+                <i class="ph ph-calendar-check text-base"></i>
                 Book a court
             </a>
         </div>
