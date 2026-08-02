@@ -145,6 +145,8 @@ Route::middleware(['auth', 'role:admin,staff'])->prefix('admin')->name('admin.')
     Route::get('/bookings/create', [AdminBookingController::class, 'create'])->name('bookings.create');
     Route::post('/bookings', [AdminBookingController::class, 'store'])->name('bookings.store');
     Route::get('/bookings/schedule', [AdminBookingController::class, 'schedule'])->name('bookings.schedule');
+    Route::get('/bookings/schedule/week', [AdminBookingController::class, 'weekSchedule'])->name('bookings.week-schedule');
+    Route::get('/bookings/schedule/week/pdf', [AdminBookingController::class, 'weekSchedulePdf'])->name('bookings.week-schedule.pdf');
     Route::get('/bookings/holds', [AdminBookingController::class, 'holds'])->name('bookings.holds.index');
     Route::get('/bookings/latest', [AdminBookingController::class, 'latest'])->name('bookings.latest');
     Route::get('/bookings/pending-count', [AdminBookingController::class, 'pendingCount'])->name('bookings.pending-count');

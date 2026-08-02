@@ -37,6 +37,7 @@
         $navItem('admin.dashboard', 'Dashboard', 'ph-squares-four'),
         $navItem('admin.bookings.index', 'Bookings', 'ph-calendar-check', $__pendingBookingsCount),
         $navItem('admin.bookings.schedule', 'Day Schedule', 'ph-calendar-blank'),
+        $navItem('admin.bookings.week-schedule', 'Week Schedule', 'ph-calendar-dots'),
         $navItem('admin.bookings.holds.index', 'Held Bookings', 'ph-pause-circle', $__activeHoldsCount),
         // Hidden for now - re-add when check-in is ready to surface again.
         // $navItem('admin.checkin.index', 'Check-in', 'ph-qr-code'),

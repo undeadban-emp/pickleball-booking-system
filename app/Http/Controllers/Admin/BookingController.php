@@ -15,6 +15,7 @@ use App\Models\CourtSlot;
 use App\Models\OperatingHours;
 use App\Services\BookingOrderService;
 use App\Services\BookingService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -144,6 +145,90 @@ class BookingController extends Controller
             'rescheduledAway' => $rescheduledAway,
             'fullyBookedDates' => $fullyBookedDates,
         ]);
+    }
+
+    /**
+     * Same underlying data as schedule() but laid out as a week-at-a-glance
+     * grid (days as columns, time-of-day as rows) for one court at a time,
+     * instead of a single day's flat booking list - lets staff spot a gap
+     * or a packed stretch across the week without clicking through each day.
+     */
+    public function weekSchedule(Request $request)
+    {
+        return view('admin.bookings.week-schedule', $this->buildWeekSchedule($request));
+    }
+
+    /**
+     * Same grid as weekSchedule(), laid out as a printable PDF - for
+     * handing a physical/emailed copy of the week to front-desk staff or a
+     * court owner who wants it off-screen.
+     */
+    public function weekSchedulePdf(Request $request)
+    {
+        $data = $this->buildWeekSchedule($request);
+
+        $brand = OperatingHours::current();
+        $logoPath = $brand->logo_path ? storage_path('app/public/'.$brand->logo_path) : public_path('logo.png');
+
+        $pdf = Pdf::loadView('admin.bookings.week-schedule-pdf', [
+            ...$data,
+            'courtName' => $data['courts']->firstWhere('id', $data['courtId'])?->name,
+            'brand' => $brand,
+            'logoPath' => is_file($logoPath) ? $logoPath : null,
+        ])->setPaper('a4', 'landscape');
+
+        return $pdf->stream("week-schedule-{$data['weekStart']->toDateString()}.pdf");
+    }
+
+    protected function buildWeekSchedule(Request $request): array
+    {
+        $date = $this->parseScheduleDate($request->string('date')) ?? Carbon::today();
+        $weekStart = $date->copy()->startOfWeek(Carbon::SUNDAY);
+        $weekEnd = $weekStart->copy()->addDays(6);
+
+        $courts = Court::where('is_active', true)->orderBy('name')->get(['id', 'name']);
+        $courtId = $request->filled('court_id') ? $request->integer('court_id') : $courts->first()?->id;
+
+        $slots = CourtSlot::where('court_id', $courtId)
+            ->whereBetween('slot_date', [$weekStart->toDateString(), $weekEnd->toDateString()])
+            ->with(['bookings' => fn ($q) => $q->whereNotIn('status', ['cancelled', 'rejected'])->with('user:id,name')])
+            ->orderBy('start_time')
+            ->get();
+
+        $days = collect(range(0, 6))->map(fn ($i) => $weekStart->copy()->addDays($i));
+
+        $times = $slots->pluck('start_time')->unique()->sort()->values();
+
+        $grid = $times->mapWithKeys(fn ($time) => [
+            $time => $slots->where('start_time', $time)->keyBy(fn (CourtSlot $s) => $s->slot_date->toDateString()),
+        ]);
+
+        return [
+            'weekStart' => $weekStart,
+            'weekEnd' => $weekEnd,
+            'days' => $days,
+            'times' => $times,
+            'grid' => $grid,
+            'courts' => $courts,
+            'courtId' => $courtId,
+        ];
+    }
+
+    /**
+     * Malformed "date" query params used to crash this page with a raw
+     * Carbon parse exception - fall back to today instead.
+     */
+    protected function parseScheduleDate($value): ?Carbon
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
