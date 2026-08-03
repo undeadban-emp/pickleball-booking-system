@@ -70,10 +70,103 @@
         </form>
     </div>
 
-    <div class="mt-4 overflow-x-auto rounded-2xl border border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-900">
-        @if ($times->isEmpty())
+    @if ($times->isEmpty())
+        <div class="mt-4 rounded-2xl border border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-900">
             <p class="p-5 text-sm text-ink-500 dark:text-ink-400">No time slots generated for this court in this week yet.</p>
-        @else
+        </div>
+    @else
+        {{-- Mobile: one day at a time, picked from a day strip, instead of
+             a 7-column grid that would need constant horizontal scrolling
+             to read on a phone. --}}
+        <div
+            class="mt-4 md:hidden"
+            x-data="{
+                days: [{{ $days->map(fn ($d) => "'".$d->toDateString()."'")->implode(',') }}],
+                activeDay: '{{ $days->first(fn ($d) => $d->toDateString() === $__todayStr)?->toDateString() ?? $days->first()->toDateString() }}',
+                get activeIndex() { return this.days.indexOf(this.activeDay); },
+                goTo(index) {
+                    if (index < 0 || index >= this.days.length) return;
+                    this.activeDay = this.days[index];
+                    this.$nextTick(() => document.getElementById('day-' + this.activeDay)?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }));
+                },
+            }"
+        >
+            <div class="flex items-center gap-1.5">
+                <button
+                    type="button"
+                    @click="goTo(activeIndex - 1)"
+                    :disabled="activeIndex === 0"
+                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-ink-200 text-ink-600 transition-colors hover:border-accent-400 hover:text-ink-950 disabled:pointer-events-none disabled:opacity-30 dark:border-ink-700 dark:text-ink-300"
+                    aria-label="Previous day"
+                >
+                    <i class="ph ph-caret-left"></i>
+                </button>
+
+                <div class="flex flex-1 gap-2 overflow-x-auto pb-1">
+                    @foreach ($days as $day)
+                        @php $__dayStr = $day->toDateString(); @endphp
+                        <button
+                            type="button"
+                            id="day-{{ $__dayStr }}"
+                            @click="activeDay = '{{ $__dayStr }}'"
+                            class="flex shrink-0 flex-col items-center rounded-xl border px-3 py-2 text-center transition-colors"
+                            :class="activeDay === '{{ $__dayStr }}'
+                                ? 'border-accent-500 bg-accent-500 text-white'
+                                : '{{ $__dayStr === $__todayStr ? 'border-accent-400' : 'border-ink-200 dark:border-ink-700' }} bg-white text-ink-700 dark:bg-ink-900 dark:text-ink-300'"
+                        >
+                            <span class="text-[10px] font-medium tracking-wide uppercase opacity-70">{{ $day->format('D') }}</span>
+                            <span class="text-sm font-semibold">{{ $day->format('M j') }}</span>
+                        </button>
+                    @endforeach
+                </div>
+
+                <button
+                    type="button"
+                    @click="goTo(activeIndex + 1)"
+                    :disabled="activeIndex === days.length - 1"
+                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-ink-200 text-ink-600 transition-colors hover:border-accent-400 hover:text-ink-950 disabled:pointer-events-none disabled:opacity-30 dark:border-ink-700 dark:text-ink-300"
+                    aria-label="Next day"
+                >
+                    <i class="ph ph-caret-right"></i>
+                </button>
+            </div>
+
+            @foreach ($days as $day)
+                @php $__dayStr = $day->toDateString(); @endphp
+                <div x-show="activeDay === '{{ $__dayStr }}'" x-cloak class="mt-3 space-y-2">
+                    @foreach ($times as $time)
+                        @php
+                            $__rowEndTime = $grid[$time]->first()?->end_time;
+                            $__slot = $grid[$time][$__dayStr] ?? null;
+                            $__booking = $__slot?->bookings->first();
+                        @endphp
+                        <div class="flex items-center gap-3 rounded-xl border border-ink-100 bg-white p-3 dark:border-ink-800 dark:bg-ink-900">
+                            <span class="w-24 shrink-0 text-xs font-bold text-ink-700 dark:text-ink-300">
+                                {{ \Illuminate\Support\Carbon::parse($time)->format('g:i A') }}@if ($__rowEndTime)<br>– {{ \Illuminate\Support\Carbon::parse($__rowEndTime)->format('g:i A') }}@endif
+                            </span>
+                            <div class="min-w-0 flex-1">
+                                @if (! $__slot)
+                                    <span class="text-xs text-ink-300 dark:text-ink-700">—</span>
+                                @elseif ($__booking)
+                                    <a href="{{ route('admin.bookings.schedule', ['date' => $__dayStr]) }}"
+                                        class="block truncate rounded-lg px-2.5 py-1.5 text-xs font-medium transition-opacity hover:opacity-80 {{ $__cellBadge($__booking) }}">
+                                        <span class="block truncate font-semibold">{{ $__booking->contactName() }}</span>
+                                        <span class="block truncate opacity-80">{{ $__cellLabel($__booking) }}</span>
+                                    </a>
+                                @else
+                                    <span class="block rounded-lg border border-dashed border-ink-200 px-2.5 py-1.5 text-center text-xs text-ink-400 dark:border-ink-700 dark:text-ink-600">
+                                        Open
+                                    </span>
+                                @endif
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            @endforeach
+        </div>
+
+        {{-- Desktop/tablet: full 7-day grid --}}
+        <div class="mt-4 hidden overflow-x-auto rounded-2xl border border-ink-200 bg-white md:block dark:border-ink-800 dark:bg-ink-900">
             <table class="w-full min-w-[900px] border-collapse text-left text-sm">
                 <thead>
                     <tr class="border-b border-ink-100 dark:border-ink-800">
@@ -121,7 +214,7 @@
                     @endforeach
                 </tbody>
             </table>
-        @endif
-    </div>
+        </div>
+    @endif
 
 </x-layouts.admin>

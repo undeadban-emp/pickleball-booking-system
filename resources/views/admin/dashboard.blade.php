@@ -70,7 +70,7 @@
     </div>
 
     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <a href="{{ route('admin.bookings.index', ['status' => 'pending_payment']) }}" class="rounded-2xl border border-ink-200 bg-white p-5 transition-colors hover:border-accent-400 dark:border-ink-800 dark:bg-ink-900">
+        <a href="{{ route('admin.bookings.index', ['tab' => 'bookings']) }}" class="rounded-2xl border border-ink-200 bg-white p-5 transition-colors hover:border-accent-400 dark:border-ink-800 dark:bg-ink-900">
             <p class="text-sm text-ink-500 dark:text-ink-400">Awaiting payment review</p>
             <p class="mt-1 font-display text-3xl font-semibold text-ink-950 dark:text-white">{{ $pendingCount }}</p>
         </a>

@@ -92,7 +92,7 @@
 
     <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[260px_1fr] lg:items-start">
         {{-- Calendar --}}
-        <div class="mx-auto w-full max-w-65 rounded-2xl border border-ink-200 bg-white p-3 dark:border-ink-800 dark:bg-ink-900 lg:mx-0">
+        <div class="w-full rounded-2xl border border-ink-200 bg-white p-3 dark:border-ink-800 dark:bg-ink-900 lg:mx-0 lg:max-w-65">
             <div class="flex items-center justify-between">
                 <a
                     href="{{ route('admin.bookings.schedule', ['date' => $monthStart->copy()->subMonth()->startOfMonth()->toDateString()]) }}"
@@ -168,11 +168,11 @@
                 @forelse ($bookings as $booking)
                     <li
                         @click="activeId = {{ $booking->id }}"
-                        class="flex cursor-pointer items-center gap-4 rounded-xl border border-ink-100 p-3 transition-colors hover:bg-ink-50 dark:border-ink-800 dark:hover:bg-ink-800/50"
+                        class="flex cursor-pointer flex-col gap-3 rounded-xl border border-ink-100 p-3 transition-colors hover:bg-ink-50 md:flex-row md:items-center md:gap-4 dark:border-ink-800 dark:hover:bg-ink-800/50"
                     >
-                        <div class="flex w-36 shrink-0 flex-col items-start divide-y divide-ink-100 pr-4 dark:divide-ink-800">
+                        <div class="flex flex-row flex-wrap gap-x-3 gap-y-0.5 md:w-36 md:shrink-0 md:flex-col md:flex-nowrap md:items-start md:gap-0 md:divide-y md:divide-ink-100 md:pr-4 dark:md:divide-ink-800">
                             @foreach ($booking->slots->sortBy('start_time') as $slot)
-                                <span class="w-full py-1 font-mono text-sm font-semibold text-ink-900 first:pt-0 last:pb-0 dark:text-ink-100">{{ Carbon::parse($slot->start_time)->format('g:i A') }} to {{ Carbon::parse($slot->end_time)->format('g:i A') }}</span>
+                                <span class="w-full py-0.5 font-mono text-sm font-semibold text-ink-900 md:py-1 md:first:pt-0 md:last:pb-0 dark:text-ink-100">{{ Carbon::parse($slot->start_time)->format('g:i A') }} to {{ Carbon::parse($slot->end_time)->format('g:i A') }}</span>
                             @endforeach
                         </div>
 
@@ -200,7 +200,7 @@
                             @endif
                         </div>
 
-                        <div class="flex shrink-0 flex-col items-end gap-0.5">
+                        <div class="flex flex-row items-center justify-between gap-2 md:shrink-0 md:flex-col md:items-end md:gap-0.5">
                             <span class="rounded-full px-2.5 py-1 text-xs font-semibold {{ $statusBadge($booking) }}">
                                 {{ $statusLabel($booking) }}
                             </span>
@@ -209,7 +209,7 @@
                             @endif
                         </div>
 
-                        <div class="flex shrink-0 items-center gap-2" @click.stop>
+                        <div class="flex shrink-0 items-center gap-2 self-end md:self-auto" @click.stop>
                             <button
                                 type="button"
                                 @click="activeId = {{ $booking->id }}"

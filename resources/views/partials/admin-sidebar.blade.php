@@ -1,70 +1,10 @@
 @php
     $__brandSettings = \App\Models\OperatingHours::current();
-    // Representative bookings only, so a multi-session order pending
-    // review badges as 1 item to act on - not one per session, which
-    // would overcount relative to what the bookings list actually shows.
-    $__pendingBookingsCount = \App\Models\Booking::where('status', 'pending_payment')
-        ->where(function ($q) {
-            $q->whereNull('booking_order_id')
-                ->orWhereIn('id', function ($sub) {
-                    $sub->selectRaw('MIN(id)')->from('bookings')->whereNotNull('booking_order_id')->groupBy('booking_order_id');
-                });
-        })
-        ->count();
-
-    $__activeHoldsCount = \App\Models\BookingHold::whereNull('resolved_at')->count();
-
-    $navItem = function (string $routeName, string $label, string $icon, ?int $badge = null) {
-        $active = request()->routeIs($routeName.'*');
-        return compact('routeName', 'label', 'icon', 'active', 'badge');
-    };
-
-    $navGroup = function (string $label, string $icon, array $children) {
-        $children = collect($children)->map(function ($child) {
-            $child['active'] = request()->routeIs($child['routeName'].'*');
-            return $child;
-        });
-
-        return [
-            'label' => $label,
-            'icon' => $icon,
-            'children' => $children,
-            'active' => $children->contains('active', true),
-        ];
-    };
-
-    $items = collect([
-        $navItem('admin.dashboard', 'Dashboard', 'ph-squares-four'),
-        $navItem('admin.bookings.index', 'Bookings', 'ph-calendar-check', $__pendingBookingsCount),
-        $navItem('admin.bookings.schedule', 'Day Schedule', 'ph-calendar-blank'),
-        $navItem('admin.bookings.week-schedule', 'Week Schedule', 'ph-calendar-dots'),
-        $navItem('admin.bookings.holds.index', 'Held Bookings', 'ph-pause-circle', $__activeHoldsCount),
-        // Hidden for now - re-add when check-in is ready to surface again.
-        // $navItem('admin.checkin.index', 'Check-in', 'ph-qr-code'),
-    ]);
-
-    if (auth()->user()->isAdmin()) {
-        $items->push($navItem('admin.courts.index', 'Courts', 'ph-tennis-ball'));
-        $items->push($navItem('admin.payment-methods.index', 'Payment methods', 'ph-credit-card'));
-        $items->push($navItem('admin.users.index', 'Users', 'ph-users'));
-        $items->push($navGroup('Reports', 'ph-chart-bar', [
-            ['routeName' => 'admin.reports.bookings', 'label' => 'Booking Reports'],
-            ['routeName' => 'admin.reports.revenue', 'label' => 'Revenue & Finance Reports'],
-            ['routeName' => 'admin.reports.clients', 'label' => 'Client Reports'],
-        ]));
-        $items->push($navGroup('Settings', 'ph-gear-six', [
-            ['routeName' => 'admin.settings.edit', 'label' => 'General'],
-            ['routeName' => 'admin.settings.hours', 'label' => 'Time-of-day Groups'],
-            ['routeName' => 'admin.settings.rates.index', 'label' => 'Court Rates'],
-            ['routeName' => 'admin.settings.location', 'label' => 'Location'],
-            ['routeName' => 'admin.hero-images.index', 'label' => 'Hero images'],
-            ['routeName' => 'admin.gallery-images.index', 'label' => 'Album'],
-            ['routeName' => 'admin.settings.emails.index', 'label' => 'Emails'],
-        ]));
-    }
+    $__pendingBookingsCount = \App\Support\AdminNav::pendingBookingsCount();
+    $items = \App\Support\AdminNav::items();
 @endphp
 
-<aside class="hidden w-60 shrink-0 flex-col border-r border-ink-800 bg-ink-950 text-ink-200 md:flex">
+<aside class="hidden w-60 shrink-0 flex-col border-r border-ink-800 bg-ink-950 text-ink-200 md:sticky md:top-0 md:flex md:h-dvh">
     <div class="flex h-16 items-center gap-2.5 border-b border-ink-800 px-5">
         @if ($__brandSettings->logoUrl())
             <img src="{{ $__brandSettings->logoUrl() }}" alt="{{ config('app.name') }}" style="height: {{ $__brandSettings->logo_height }}px" class="max-h-9 w-auto">
@@ -80,7 +20,7 @@
     </div>
 
     <nav
-        class="flex-1 space-y-1 px-3 py-4"
+        class="scrollbar-ink flex-1 space-y-1 overflow-y-auto px-3 py-4"
         x-data="{ pendingCount: {{ $__pendingBookingsCount }} }"
         x-init="setInterval(() => {
             fetch('{{ route('admin.bookings.pending-count') }}', { headers: { Accept: 'application/json' } })
@@ -112,12 +52,12 @@
                 </details>
             @else
                 <a
-                    href="{{ route($item['routeName']) }}"
+                    href="{{ route($item['routeName'], $item['query'] ?? []) }}"
                     class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors {{ $item['active'] ? 'bg-accent-500 text-ink-950' : 'text-ink-300 hover:bg-ink-900 hover:text-white' }}"
                 >
                     <i class="ph {{ $item['icon'] }} text-lg"></i>
                     <span class="flex-1">{{ $item['label'] }}</span>
-                    @if ($item['routeName'] === 'admin.bookings.index' && $item['badge'] !== null)
+                    @if ($item['routeName'] === 'admin.bookings.index' && ($item['query']['tab'] ?? null) === 'bookings' && $item['badge'] !== null)
                         {{-- Live-polled count (see the nav's x-init above) -
                         the only badge that needs to update without a reload. --}}
                         <span

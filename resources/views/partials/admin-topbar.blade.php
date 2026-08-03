@@ -3,20 +3,11 @@
         'admin' => 'bg-accent-100 text-accent-800 dark:bg-accent-900 dark:text-accent-200',
         default => 'bg-ink-200 text-ink-700 dark:bg-ink-800 dark:text-ink-300',
     };
-    // Representative bookings only, so a multi-session order pending
-    // review badges as 1 item to act on - not one per session, which
-    // would overcount relative to what the bookings list actually shows.
-    $__pendingBookingsCount = \App\Models\Booking::where('status', 'pending_payment')
-        ->where(function ($q) {
-            $q->whereNull('booking_order_id')
-                ->orWhereIn('id', function ($sub) {
-                    $sub->selectRaw('MIN(id)')->from('bookings')->whereNotNull('booking_order_id')->groupBy('booking_order_id');
-                });
-        })
-        ->count();
+    $__pendingBookingsCount = \App\Support\AdminNav::pendingBookingsCount();
+    $items = \App\Support\AdminNav::items();
 @endphp
 
-<header class="flex h-16 items-center justify-between gap-4 border-b border-ink-200 bg-white px-4 sm:px-6 lg:px-8 dark:border-ink-800 dark:bg-ink-900">
+<header class="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-ink-200 bg-white px-4 sm:px-6 lg:px-8 dark:border-ink-800 dark:bg-ink-900">
     <details
         class="relative md:hidden"
         x-data="{ pendingCount: {{ $__pendingBookingsCount }} }"
@@ -36,22 +27,39 @@
                 class="absolute -right-2 -top-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-semibold text-white"
             ></span>
         </summary>
-        <div class="absolute top-full left-0 z-30 mt-2 w-52 rounded-xl border border-ink-100 bg-white p-2 shadow-lg dark:border-ink-800 dark:bg-ink-900">
-            <a href="{{ route('admin.dashboard') }}" class="block rounded-lg px-3 py-2 text-sm text-ink-700 hover:bg-ink-100 dark:text-ink-200 dark:hover:bg-ink-800">Dashboard</a>
-            <a href="{{ route('admin.bookings.index') }}" class="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-ink-700 hover:bg-ink-100 dark:text-ink-200 dark:hover:bg-ink-800">
-                <span>Bookings</span>
-                <span
-                    x-show="pendingCount > 0"
-                    x-text="pendingCount"
-                    class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-semibold text-white"
-                ></span>
-            </a>
-            <a href="{{ route('admin.checkin.index') }}" class="block rounded-lg px-3 py-2 text-sm text-ink-700 hover:bg-ink-100 dark:text-ink-200 dark:hover:bg-ink-800">Check-in</a>
-            @if (auth()->user()->isAdmin())
-                <a href="{{ route('admin.courts.index') }}" class="block rounded-lg px-3 py-2 text-sm text-ink-700 hover:bg-ink-100 dark:text-ink-200 dark:hover:bg-ink-800">Courts</a>
-                <a href="{{ route('admin.payment-methods.index') }}" class="block rounded-lg px-3 py-2 text-sm text-ink-700 hover:bg-ink-100 dark:text-ink-200 dark:hover:bg-ink-800">Payment methods</a>
-                <a href="{{ route('admin.settings.edit') }}" class="block rounded-lg px-3 py-2 text-sm text-ink-700 hover:bg-ink-100 dark:text-ink-200 dark:hover:bg-ink-800">Settings</a>
-            @endif
+        <div class="absolute top-full left-0 z-30 mt-2 max-h-[calc(100dvh-5rem)] w-60 overflow-y-auto rounded-xl border border-ink-100 bg-white p-2 shadow-lg dark:border-ink-800 dark:bg-ink-900">
+            @foreach ($items as $item)
+                @if (isset($item['children']))
+                    <details class="group">
+                        <summary class="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-ink-700 hover:bg-ink-100 dark:text-ink-200 dark:hover:bg-ink-800">
+                            <span class="flex-1">{{ $item['label'] }}</span>
+                            <i class="ph ph-caret-down text-xs transition-transform group-open:rotate-180"></i>
+                        </summary>
+                        <div class="mt-1 space-y-1 pl-4">
+                            @foreach ($item['children'] as $child)
+                                <a href="{{ route($child['routeName']) }}" class="block rounded-lg px-3 py-2 text-sm text-ink-700 hover:bg-ink-100 dark:text-ink-200 dark:hover:bg-ink-800">
+                                    {{ $child['label'] }}
+                                </a>
+                            @endforeach
+                        </div>
+                    </details>
+                @else
+                    <a href="{{ route($item['routeName'], $item['query'] ?? []) }}" class="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-ink-700 hover:bg-ink-100 dark:text-ink-200 dark:hover:bg-ink-800">
+                        <span>{{ $item['label'] }}</span>
+                        @if ($item['routeName'] === 'admin.bookings.index' && ($item['query']['tab'] ?? null) === 'bookings')
+                            <span
+                                x-show="pendingCount > 0"
+                                x-text="pendingCount"
+                                class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-semibold text-white"
+                            ></span>
+                        @elseif ($item['badge'] !== null && $item['badge'] > 0)
+                            <span class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[11px] font-semibold text-white">
+                                {{ $item['badge'] }}
+                            </span>
+                        @endif
+                    </a>
+                @endif
+            @endforeach
         </div>
     </details>
 

@@ -115,7 +115,7 @@
             poll() {
                 const watchIds = Object.keys(this.watchState).join(',');
 
-                fetch('{{ route('admin.bookings.latest') }}?last_id=' + this.lastId + '&watch_ids=' + watchIds, { headers: { Accept: 'application/json' } })
+                fetch('{{ route('admin.bookings.latest') }}?last_id=' + this.lastId + '&tab={{ $tab }}&watch_ids=' + watchIds, { headers: { Accept: 'application/json' } })
                     .then(res => res.ok ? res.json() : null)
                     .then(payload => {
                         if (!payload) return;
@@ -154,8 +154,11 @@
         @keydown.escape.window="activeId = null"
     >
 
+    @php
+        $tabTitles = ['bookings' => 'Bookings', 'history' => 'History', 'cancelled' => 'Cancelled'];
+    @endphp
     <div class="flex flex-wrap items-center justify-between gap-3">
-        <h1 class="font-display text-2xl font-semibold tracking-tight text-ink-950 dark:text-white">Bookings</h1>
+        <h1 class="font-display text-2xl font-semibold tracking-tight text-ink-950 dark:text-white">{{ $tabTitles[$tab] }}</h1>
         <a href="{{ route('admin.bookings.create') }}" class="flex items-center gap-1.5 rounded-lg bg-ink-950 px-4 py-2 text-sm font-semibold text-white hover:bg-ink-800 dark:bg-accent-500 dark:text-ink-950 dark:hover:bg-accent-400">
             <i class="ph ph-plus text-base"></i>
             New booking
@@ -186,16 +189,8 @@
     @enderror
 
     {{-- Filters --}}
-    <form method="GET" class="mt-6 flex flex-wrap items-end gap-3 rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900">
-        <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Status</label>
-            <select name="status" class="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-800 focus:border-accent-500 focus:ring-2 focus:ring-accent-200 focus:outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200">
-                <option value="">All</option>
-                @foreach (['pending_payment' => 'Pending payment', 'confirmed' => 'Confirmed', 'on_hold' => 'On hold', 'rejected' => 'Rejected', 'cancelled' => 'Cancelled', 'completed' => 'Completed'] as $value => $label)
-                    <option value="{{ $value }}" @selected(($filters['status'] ?? '') === $value)>{{ $label }}</option>
-                @endforeach
-            </select>
-        </div>
+    <form method="GET" class="mt-4 flex flex-wrap items-end gap-3 rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900">
+        <input type="hidden" name="tab" value="{{ $tab }}">
 
         <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-ink-500 dark:text-ink-400">Court</label>
@@ -217,12 +212,149 @@
             Filter
         </button>
         @if (array_filter($filters))
-            <a href="{{ route('admin.bookings.index') }}" class="text-sm font-medium text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-white">Clear</a>
+            <a href="{{ route('admin.bookings.index', ['tab' => $tab]) }}" class="text-sm font-medium text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-white">Clear</a>
         @endif
     </form>
 
-    {{-- Table --}}
-    <div class="mt-4 overflow-x-auto rounded-2xl border border-ink-200 dark:border-ink-800">
+    {{-- Mobile cards --}}
+    <div class="mt-4 space-y-3 md:hidden">
+        @forelse ($bookings as $booking)
+            @php $isOrder = $booking->bookingOrder && $booking->bookingOrder->bookings_count > 1; @endphp
+            <div
+                @click="activeId = {{ $booking->id }}"
+                class="cursor-pointer rounded-2xl border border-ink-200 bg-white p-4 transition-colors hover:border-accent-400 dark:border-ink-800 dark:bg-ink-900"
+            >
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                        <p class="font-mono text-xs text-ink-500 dark:text-ink-400">
+                            {{ $booking->booking_code }}
+                            @if ($isOrder)
+                                <span class="font-sans text-ink-400">+{{ $booking->bookingOrder->bookings_count - 1 }} more</span>
+                            @endif
+                        </p>
+                        <p class="truncate font-medium text-ink-900 dark:text-ink-100">{{ $booking->contactName() }}</p>
+                        @if ($booking->isGuestBooking())
+                            <p class="text-xs text-ink-500 dark:text-ink-500">{{ $booking->guest_phone }} · Guest</p>
+                        @endif
+                    </div>
+                    <span class="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold {{ $statusBadge($booking) }}">
+                        {{ $statusLabel($booking) }}
+                    </span>
+                </div>
+
+                <div class="mt-2.5 space-y-1 text-sm text-ink-700 dark:text-ink-300">
+                    <p class="flex items-center gap-1.5"><i class="ph ph-tennis-ball text-ink-400"></i> {{ $booking->court->name }}</p>
+                    <p class="flex items-center gap-1.5">
+                        <i class="ph ph-calendar text-ink-400"></i>
+                        @if ($isOrder)
+                            @php $orderDates = $booking->bookingOrder->bookings->flatMap(fn ($s) => $s->slots->pluck('slot_date'))->map(fn ($d) => \Illuminate\Support\Carbon::parse($d)); @endphp
+                            {{ $orderDates->isNotEmpty() ? $orderDates->min()->format('M j, Y').' - '.$orderDates->max()->format('M j, Y') : '—' }}
+                        @else
+                            {{ $periodLabel($booking) ?? '—' }}
+                        @endif
+                    </p>
+                    @if (! $isOrder && $rescheduleNote($booking))
+                        @php $__log = $rescheduleNote($booking); @endphp
+                        <p class="flex items-start gap-1.5 text-xs font-medium text-accent-700 dark:text-accent-400">
+                            <i class="ph ph-arrow-clockwise mt-0.5"></i>
+                            Rescheduled from {{ $__log->from_slot_date->format('M j') }}, {{ \Illuminate\Support\Carbon::parse($__log->from_start_time)->format('g:i A') }}
+                        </p>
+                    @endif
+                    @if ($booking->status === 'cancelled')
+                        <p class="text-xs text-ink-500 dark:text-ink-400">{{ $booking->cancellationSummary() }}</p>
+                    @elseif ($statusAt($booking))
+                        <p class="text-xs text-ink-400 dark:text-ink-500">{{ $statusAt($booking)->format('M j, Y g:i A') }}</p>
+                    @endif
+                </div>
+
+                <div class="mt-2.5 flex items-center justify-between border-t border-ink-100 pt-2.5 dark:border-ink-800">
+                    @if ($booking->gcash_reference)
+                        <span class="inline-flex items-center gap-1 font-mono text-xs text-emerald-700 dark:text-emerald-400">
+                            <i class="ph ph-check-circle text-sm"></i> {{ $booking->gcash_reference }}
+                        </span>
+                    @elseif ($booking->paymentProofUrl())
+                        <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                            <i class="ph ph-check-circle text-sm"></i> Proof of payment
+                        </span>
+                    @else
+                        <span class="inline-flex items-center gap-1 text-xs font-medium text-rose-600 dark:text-rose-400">
+                            <i class="ph ph-x-circle text-sm"></i> Not submitted
+                        </span>
+                    @endif
+                    <span class="font-medium text-ink-900 dark:text-ink-100">₱{{ number_format($isOrder ? $booking->bookingOrder->total_price : $booking->total_price, 2) }}</span>
+                </div>
+
+                <div class="mt-2.5 flex flex-wrap items-center gap-2" @click.stop>
+                    <button type="button" @click="activeId = {{ $booking->id }}" class="flex items-center gap-1.5 rounded-lg border border-ink-200 px-3.5 py-2 text-sm font-semibold text-ink-700 hover:border-ink-400 hover:text-ink-900 dark:border-ink-700 dark:text-ink-300" title="View details">
+                        <i class="ph ph-eye text-lg"></i>
+                        View
+                    </button>
+                    @if (auth()->user()->isAdmin() || auth()->user()->isStaff())
+                        @if ($isOrder)
+                            @if ($booking->bookingOrder->bookings->contains($isReschedulable))
+                                <a href="{{ route('admin.bookings.reschedule.select', $booking->bookingOrder) }}" class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-ink-400 hover:text-ink-800 dark:border-ink-700 dark:text-ink-400" title="Pick a session to reschedule">
+                                    <i class="ph ph-arrow-clockwise text-base"></i>
+                                </a>
+                            @endif
+                            @if ($booking->bookingOrder->bookings->contains($isHoldable))
+                                <a href="{{ route('admin.bookings.hold.select', $booking->bookingOrder) }}" class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-amber-400 hover:text-amber-700 dark:border-ink-700 dark:text-ink-400" title="Pick a session to hold">
+                                    <i class="ph ph-pause-circle text-base"></i>
+                                </a>
+                            @endif
+                            @if ($isOrderEditable($booking->bookingOrder))
+                                <a href="{{ route('admin.bookings.edit-order', $booking->bookingOrder) }}" class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-accent-400 hover:text-accent-700 dark:border-ink-700 dark:text-ink-400" title="Edit this booking's dates">
+                                    <i class="ph ph-pencil-simple text-base"></i>
+                                </a>
+                            @endif
+                        @else
+                            @if ($isReschedulable($booking))
+                                <a href="{{ route('admin.bookings.reschedule.edit', $booking) }}" class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-ink-400 hover:text-ink-800 dark:border-ink-700 dark:text-ink-400" title="Reschedule this booking">
+                                    <i class="ph ph-arrow-clockwise text-base"></i>
+                                </a>
+                            @endif
+                            @if ($isHoldable($booking))
+                                <a href="{{ route('admin.bookings.hold.edit', $booking) }}" class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-amber-400 hover:text-amber-700 dark:border-ink-700 dark:text-ink-400" title="Put this booking on hold">
+                                    <i class="ph ph-pause-circle text-base"></i>
+                                </a>
+                            @endif
+                            @if ($booking->isAdminEditable())
+                                <a href="{{ route('admin.bookings.edit', $booking) }}" class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:border-accent-400 hover:text-accent-700 dark:border-ink-700 dark:text-ink-400" title="Edit guest details or hours">
+                                    <i class="ph ph-pencil-simple text-base"></i>
+                                </a>
+                            @endif
+                        @endif
+                    @endif
+                    @if ($booking->status === 'pending_payment' && (auth()->user()->isAdmin() || auth()->user()->isStaff()))
+                        @php $orderNote = $booking->bookingOrder ? " This covers all {$booking->bookingOrder->bookings_count} sessions in the order." : ''; @endphp
+                        <form method="POST" action="{{ route('admin.bookings.approve', $booking) }}" class="ml-auto"
+                            onsubmit="return confirmSubmit(this, { title: 'Approve this booking?', text: 'The customer will be notified that their booking is confirmed.{{ $orderNote }}', icon: 'question', confirmButtonText: 'Approve', confirmButtonColor: '#10b981' });"
+                        >
+                            @csrf
+                            <button type="submit" class="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600">Approve</button>
+                        </form>
+                        <form method="POST" action="{{ route('admin.bookings.reject', $booking) }}"
+                            onsubmit="return confirmSubmit(this, { title: 'Reject this booking?', text: 'The customer will be notified that their payment was not confirmed.{{ $orderNote }}', icon: 'warning', confirmButtonText: 'Reject', confirmButtonColor: '#e11d48', input: 'textarea', inputLabel: 'Reason (optional, shown to the customer)', inputPlaceholder: 'e.g. Payment could not be verified', inputName: 'reason' });"
+                        >
+                            @csrf
+                            <button type="submit" class="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-600">Reject</button>
+                        </form>
+                    @elseif ($booking->status === 'confirmed' && (auth()->user()->isAdmin() || auth()->user()->isStaff()))
+                        <form method="POST" action="{{ route('admin.bookings.cancel', $booking) }}" class="ml-auto"
+                            onsubmit="return confirmSubmit(this, { title: 'Cancel this booking?', text: 'This will free up the slot and notify the customer.', icon: 'warning', confirmButtonText: 'Cancel booking', confirmButtonColor: '#e11d48' });"
+                        >
+                            @csrf
+                            <button type="submit" class="rounded-lg border border-ink-200 px-3 py-1.5 text-xs font-semibold text-ink-700 hover:border-rose-400 hover:text-rose-600 dark:border-ink-700 dark:text-ink-300">Cancel</button>
+                        </form>
+                    @endif
+                </div>
+            </div>
+        @empty
+            <p class="rounded-2xl border border-dashed border-ink-200 p-8 text-center text-sm text-ink-500 dark:border-ink-800 dark:text-ink-400">No bookings match these filters.</p>
+        @endforelse
+    </div>
+
+    {{-- Table (desktop/tablet) --}}
+    <div class="mt-4 hidden overflow-x-auto rounded-2xl border border-ink-200 md:block dark:border-ink-800">
         <table class="w-full min-w-[900px] text-left text-sm">
             <thead class="bg-ink-100 text-xs font-medium tracking-wide text-ink-500 uppercase dark:bg-ink-800 dark:text-ink-400">
                 <tr>

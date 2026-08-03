@@ -36,6 +36,27 @@
    class (never applied), instead of following the OS/browser color scheme. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Thin, on-brand scrollbar for the always-dark admin sidebar nav - the
+   default OS scrollbar (chunky, light-themed) looks out of place against
+   the dark ink-950 background whenever the nav list overflows. */
+.scrollbar-ink {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-ink-700) transparent;
+}
+.scrollbar-ink::-webkit-scrollbar {
+    width: 6px;
+}
+.scrollbar-ink::-webkit-scrollbar-track {
+    background: transparent;
+}
+.scrollbar-ink::-webkit-scrollbar-thumb {
+    background-color: var(--color-ink-700);
+    border-radius: 9999px;
+}
+.scrollbar-ink::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-ink-600);
+}
+
 @theme {
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';

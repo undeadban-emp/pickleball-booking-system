@@ -130,7 +130,40 @@
                     </div>
                 </div>
             @else
-                <a href="{{ route('login') }}" class="hidden text-sm font-medium text-ink-600 transition-colors hover:text-ink-950 sm:inline md:order-3 dark:text-ink-300 dark:hover:text-white">Log in</a>
+                <a href="{{ route('login') }}" class="hidden text-sm font-medium text-ink-600 transition-colors hover:text-ink-950 md:order-3 md:inline dark:text-ink-300 dark:hover:text-white">Log in</a>
+
+                {{-- Mobile-only menu for guests, mirrors the auth account menu so phone view isn't missing Home/Log in links that desktop shows inline. --}}
+                <div class="relative md:hidden" x-data="{ open: false }" @click.outside="open = false" @keydown.escape.window="open = false">
+                    <button
+                        type="button"
+                        @click="open = !open"
+                        class="flex items-center rounded-full border border-ink-200 p-1.5 text-sm font-medium text-ink-700 transition-colors hover:border-ink-300 dark:border-ink-700 dark:text-ink-300 dark:hover:border-ink-600"
+                        aria-label="Menu"
+                    >
+                        <i class="ph ph-list text-lg"></i>
+                    </button>
+
+                    <div
+                        x-show="open"
+                        x-cloak
+                        x-transition
+                        class="absolute top-full right-0 z-50 mt-2 w-56 overflow-hidden rounded-2xl border border-ink-100 bg-white py-1.5 shadow-xl dark:border-ink-800 dark:bg-ink-900"
+                    >
+                        <a href="{{ url('/') }}" class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-ink-700 hover:bg-ink-50 dark:text-ink-300 dark:hover:bg-ink-800">
+                            <i class="ph ph-house text-base"></i> Home
+                        </a>
+
+                        <a href="{{ route('open-play.index') }}" class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-ink-700 hover:bg-ink-50 dark:text-ink-300 dark:hover:bg-ink-800">
+                            <i class="ph ph-users-three text-base"></i> Open Play
+                        </a>
+
+                        <div class="my-1 border-t border-ink-100 dark:border-ink-800"></div>
+
+                        <a href="{{ route('login') }}" class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-ink-700 hover:bg-ink-50 dark:text-ink-300 dark:hover:bg-ink-800">
+                            <i class="ph ph-sign-in text-base"></i> Log in
+                        </a>
+                    </div>
+                </div>
             @endauth
         </div>
     </nav>

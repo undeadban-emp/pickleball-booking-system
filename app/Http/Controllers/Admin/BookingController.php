@@ -18,39 +18,62 @@ use App\Services\BookingService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 
 class BookingController extends Controller
 {
     public function __construct(protected BookingService $bookings, protected BookingOrderService $bookingOrders) {}
 
+    /**
+     * Which raw statuses belong on each tab of the admin bookings list.
+     * `confirmed` bookings whose session(s) are all in the past effectively
+     * move from `bookings` to `history` - see effectiveStatus() - so those
+     * two tabs are computed in PHP; `cancelled` needs no such adjustment and
+     * stays a plain SQL-filtered, DB-paginated query. on_hold bookings are
+     * deliberately excluded from every tab here - they live on the separate
+     * "Held Bookings" page instead.
+     */
+    protected const TAB_STATUSES = [
+        'bookings' => ['pending_payment', 'confirmed'],
+        'history' => ['completed'],
+        'cancelled' => ['cancelled', 'rejected', 'no_show'],
+    ];
+
+    /**
+     * Not a class const because PHP constants can't hold closures.
+     */
+    protected function eagerLoads(): array
+    {
+        return [
+            'court', 'user:id,name,phone,email', 'slots', 'statusLogs.changedBy:id,name', 'matches', 'rescheduleLogs.changedBy:id,name',
+            // Every hold this booking has ever been through, not just an
+            // active one - the History timeline needs past (resolved)
+            // holds too, to show what time was held even after it's
+            // since been rescheduled elsewhere. Callers wanting just the
+            // currently-active hold filter this loaded collection with
+            // ->whereNull('resolved_at') rather than re-querying.
+            'holds' => fn ($q) => $q->with('fromCourt:id,name')->orderByDesc('created_at'),
+            'bookingOrder' => fn ($q) => $q->withCount('bookings'),
+            'bookingOrder.bookings' => fn ($q) => $q->orderBy('id'),
+            'bookingOrder.bookings.slots',
+            'bookingOrder.bookings.court',
+            'bookingOrder.bookings.rescheduleLogs',
+            'bookingOrder.bookings.splitFrom:id,booking_code,status',
+            'bookingOrder.bookings.splitFrom.holds' => fn ($q) => $q->whereNull('resolved_at'),
+            'bookingOrder.bookings.splitSiblings:id,booking_code,split_from_booking_id',
+            'bookingOrder.bookings.holds' => fn ($q) => $q->orderByDesc('created_at'),
+        ];
+    }
+
     public function index(Request $request)
     {
-        $bookings = $this->representativeBookings()
-            ->with([
-                'court', 'user:id,name,phone,email', 'slots', 'statusLogs.changedBy:id,name', 'matches', 'rescheduleLogs.changedBy:id,name',
-                // Every hold this booking has ever been through, not just an
-                // active one - the History timeline needs past (resolved)
-                // holds too, to show what time was held even after it's
-                // since been rescheduled elsewhere. Callers wanting just the
-                // currently-active hold filter this loaded collection with
-                // ->whereNull('resolved_at') rather than re-querying.
-                'holds' => fn ($q) => $q->with('fromCourt:id,name')->orderByDesc('created_at'),
-                'bookingOrder' => fn ($q) => $q->withCount('bookings'),
-                'bookingOrder.bookings' => fn ($q) => $q->orderBy('id'),
-                'bookingOrder.bookings.slots',
-                'bookingOrder.bookings.court',
-                'bookingOrder.bookings.rescheduleLogs',
-                'bookingOrder.bookings.splitFrom:id,booking_code,status',
-                'bookingOrder.bookings.splitFrom.holds' => fn ($q) => $q->whereNull('resolved_at'),
-                'bookingOrder.bookings.splitSiblings:id,booking_code,split_from_booking_id',
-                'bookingOrder.bookings.holds' => fn ($q) => $q->orderByDesc('created_at'),
-            ])
-            // Held bookings have zero slots and are shown in their own
-            // "Held Bookings" list instead - only surface them here if the
-            // admin explicitly filters for them (they'd render oddly against
-            // a template built around $booking->slots->first() otherwise).
-            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')), fn ($q) => $q->where('status', '!=', 'on_hold'))
+        $tab = $request->query('tab', 'bookings');
+        if (! array_key_exists($tab, self::TAB_STATUSES)) {
+            $tab = 'bookings';
+        }
+
+        $applyFilters = fn ($q) => $q
             ->when($request->filled('court_id'), fn ($q) => $q->where('court_id', $request->integer('court_id')))
             ->when($request->filled('search'), function ($q) use ($request) {
                 $term = $request->string('search');
@@ -60,16 +83,89 @@ class BookingController extends Controller
                         ->orWhere('guest_phone', 'like', "%{$term}%")
                         ->orWhereHas('user', fn ($q) => $q->where('name', 'like', "%{$term}%"));
                 });
-            })
-            ->latest()
-            ->paginate(15)
-            ->withQueryString();
+            });
+
+        // "Cancelled" needs no effectiveStatus adjustment, so it stays a
+        // plain SQL-filtered, DB-paginated query like the list used to be.
+        if ($tab === 'cancelled') {
+            $bookings = $applyFilters($this->representativeBookings()->whereIn('status', self::TAB_STATUSES['cancelled']))
+                ->with($this->eagerLoads())
+                ->latest()
+                ->paginate(15)
+                ->withQueryString();
+        } else {
+            // "Bookings" and "History" both draw from confirmed/pending
+            // rows, split by effectiveStatus() (which needs every session's
+            // slot dates loaded, not just a column) - so this can't be a
+            // plain SQL WHERE. Fetch the whole computable set, bucket in
+            // PHP, then paginate the filtered slice by hand.
+            $computable = $applyFilters($this->representativeBookings()->whereIn('status', ['pending_payment', 'confirmed', 'completed']))
+                ->with($this->eagerLoads())
+                ->latest()
+                ->get();
+
+            $filtered = $computable
+                ->filter(fn (Booking $b) => in_array($this->effectiveStatus($b), self::TAB_STATUSES[$tab], true))
+                ->values();
+
+            // On the "Bookings" tab, a payment reference/proof already
+            // submitted means it's sitting in the admin review queue, not
+            // waiting on the customer anymore - bubble those to the top so
+            // they can't get buried under newer bookings that don't need
+            // action yet. PHP's sort is stable (8.0+), so it only reorders
+            // by this, keeping ->latest() as the order within each group.
+            if ($tab === 'bookings') {
+                $filtered = $filtered
+                    ->sortByDesc(fn (Booking $b) => $b->status === 'pending_payment' && $b->hasSubmittedPayment())
+                    ->values();
+            }
+
+            $page = LengthAwarePaginator::resolveCurrentPage();
+            $perPage = 15;
+
+            $bookings = new LengthAwarePaginator(
+                $filtered->forPage($page, $perPage)->values(),
+                $filtered->count(),
+                $perPage,
+                $page,
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
+        }
 
         return view('admin.bookings.index', [
             'bookings' => $bookings,
             'courts' => Court::orderBy('name')->get(['id', 'name']),
-            'filters' => $request->only(['status', 'court_id', 'search']),
+            'filters' => $request->only(['court_id', 'search']),
+            'tab' => $tab,
         ]);
+    }
+
+    /**
+     * A confirmed booking whose court time has already passed is
+     * effectively done even if front-desk never scanned a check-in QR -
+     * but only once EVERY session is done, not just some of them, so a
+     * multi-session order with one date still upcoming stays "Bookings" as
+     * a whole. Mirrors Customer\BookingController::effectiveStatus() - this
+     * is purely for bucketing which tab a row belongs on; the row's own
+     * displayed status/badge is untouched.
+     */
+    protected function effectiveStatus(Booking $booking): string
+    {
+        if ($booking->status !== 'confirmed') {
+            return $booking->status;
+        }
+
+        $isOrder = $booking->bookingOrder && $booking->bookingOrder->bookings_count > 1;
+
+        $lastSlotDate = $isOrder
+            ? $booking->bookingOrder->bookings->flatMap->slots->max('slot_date')
+            : $booking->slots->max('slot_date');
+
+        if ($lastSlotDate && Carbon::parse($lastSlotDate)->lt(today())) {
+            return 'completed';
+        }
+
+        return 'confirmed';
     }
 
     /**
@@ -84,15 +180,7 @@ class BookingController extends Controller
 
         $bookings = Booking::query()
             ->whereHas('slots', fn ($q) => $q->whereDate('slot_date', $date))
-            // Cancelled bookings only belong on the day view if they were
-            // cancelled because they got rescheduled (rained out, moved to a
-            // new date) - any other cancellation (rejected, payment expired,
-            // etc.) never actually held the slot in a way staff care about
-            // here. Legacy: rescheduledTo only ever matches bookings moved
-            // via the old cancel-and-recreate mechanism, before reschedules
-            // started updating the same row in place.
-            ->where(fn ($q) => $q->where('status', '!=', 'cancelled')
-                ->orWhereHas('rescheduledTo'))
+            ->where('status', 'confirmed')
             ->with([
                 'court',
                 'user:id,name,phone,email',
@@ -655,12 +743,23 @@ class BookingController extends Controller
     {
         $lastId = $request->integer('last_id', 0);
 
+        $tab = $request->query('tab', 'bookings');
+        if (! array_key_exists($tab, self::TAB_STATUSES)) {
+            $tab = 'bookings';
+        }
+
         // Only representative bookings (see representativeBookings()) count
         // as "new arrivals" here - otherwise an order's non-representative
         // sessions (never shown as their own row) would keep tripping the
         // "new booking" banner and reload loop every poll, since the page's
-        // lastId can never catch up to an id it never displays.
+        // lastId can never catch up to an id it never displays. Also scoped
+        // to the current tab's raw statuses - lastId is the max id WITHIN
+        // that tab's filtered list, so an existing booking sitting in a
+        // different tab (e.g. already cancelled) can easily have a higher
+        // id and would otherwise look like a "new arrival" on every single
+        // poll, forcing an endless reload loop.
         $bookings = $this->representativeBookings()
+            ->whereIn('status', self::TAB_STATUSES[$tab])
             ->with(['court:id,name'])
             ->where('id', '>', $lastId)
             ->orderBy('id')

@@ -1057,6 +1057,16 @@ class BookingService
      * for support/debugging - same audit pattern as the password-reset code
      * email, so a bounced/misconfigured mailer shows up here instead of
      * silently vanishing.
+     *
+     * The actual send is deferred to the queue (processed every minute by
+     * the `queue:work --stop-when-empty` scheduled command in
+     * routes/console.php) instead of happening inline - sending mail
+     * synchronously here would block whatever HTTP request triggered it
+     * (e.g. an admin creating a walk-in booking) on the mail server's
+     * response time, which can be many seconds on a slow/misconfigured
+     * SMTP connection regardless of the admin's own network speed. The
+     * try/catch stays inside the deferred closure so the log still ends up
+     * 'sent' or 'failed' based on the real outcome, not just "queued".
      */
     protected function sendAndLogEmail(string $to, string $message, Mailable $mailable): void
     {
@@ -1066,11 +1076,13 @@ class BookingService
             'status' => 'pending',
         ]);
 
-        try {
-            Mail::to($to)->send($mailable);
-            $log->update(['status' => 'sent']);
-        } catch (\Throwable $e) {
-            $log->update(['status' => 'failed']);
-        }
+        dispatch(function () use ($to, $mailable, $log) {
+            try {
+                Mail::to($to)->send($mailable);
+                $log->update(['status' => 'sent']);
+            } catch (\Throwable $e) {
+                $log->update(['status' => 'failed']);
+            }
+        });
     }
 }
